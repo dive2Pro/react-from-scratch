@@ -1,5 +1,8 @@
 {
   "devDependencies": {
     "prettier": "^1.19.1"
+  },
+  "scripts": {
+    "dev": "parcel index.html"
   }
 }

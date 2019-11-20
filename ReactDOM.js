@@ -1,32 +1,11 @@
 import { updateContainer } from "./ReactFiberReconciler";
-import { createFiberRoot } from "./Fiber";
+import { createRootFiber } from "./Fiber";
 
-function ReactWork() {
-  this._didCommit = false;
-}
-
-ReactWork.prototype._onCommit = function() {
-  this._didCommit = true;
-};
 
 function getStateNode(fiber) {
   return fiber.current;
 }
 
-function ReactRoot(container) {
-  const root = createFiberRoot(container);
-  this._internalRoot = root;
-}
-
-ReactRoot.prototype.render = function(children, callback) {
-  const root = this._internalRoot;
-  const work = new ReactWork();
-  updateContainer(children, root, null, work._onCommit);
-};
-
-function createRootFiber(container ) {
-  return new ReactRoot(container);
-}
 
 const ReactDOM = {
   render(rElement, container) {

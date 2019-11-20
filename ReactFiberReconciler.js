@@ -6,7 +6,9 @@ import {
   ClassComponent,
   createFiberRoot,
   createFiberFromText,
-  createFiber
+  createFiber,
+  Placement,
+  PerformedWork
 } from "./Fiber";
 
 const HostComponent = 1;
@@ -22,8 +24,11 @@ let expirationContext = NoWork; // 上下文
 let nextRenderexpirationTime = NoWork;
 let nextRoot = null;
 let nextUnitOfWork = null;
+let nextFlushedRoot = null;
+let nextFlushedexpirationTime = NoWork;
+let nextEffect = null;
 
-const REACT_ELEMENT_TYPE = 0x001;
+export const REACT_ELEMENT_TYPE = 0x001;
 
 const UpdateState = 0;
 
@@ -31,89 +36,89 @@ function commitWork() {}
 
 const classComponentUpdater = {};
 
-function adoptClassInstance(workInProcess, instance) {
+function adoptClassInstance(workInProgress, instance) {
   instance.updater = classComponentUpdater;
-  workInProcess.stateNode = instance;
+  workInProgress.stateNode = instance;
 }
 
 function constructClassInstance(
-  workInProcess,
+  workInProgress,
   Ctor,
   nextProps,
   expirationTime
 ) {
   const instance = new Ctor(nextProps);
 
-  const state = (workInProcess.memoizedState =
+  const state = (workInProgress.memoizedState =
     instance.state !== null && instance.state !== undefined
       ? instance.state
       : null);
-  adoptClassInstance(workInProcess, instance);
+  adoptClassInstance(workInProgress, instance);
 
   return instance;
 }
 
 function mountClassInstance(
-  workInProcess,
+  workInProgress,
   Component,
   nextProps,
   nextRenderexpirationTime
 ) {
-  const instance = workInProcess.stateNode;
+  const instance = workInProgress.stateNode;
 
-  instance.state = workInProcess.memoizedState;
+  instance.state = workInProgress.memoizedState;
   instance.props = nextProps;
 
   if (typeof instance.componentWillMount === "function") {
-    callComponentWillMount(workInProcess, instance);
+    callComponentWillMount(workInProgress, instance);
   }
 }
 
-function memoizedState(workInProcess, nextState) {
-  workInProcess.memoizedState = nextState;
+function memoizedState(workInProgress, nextState) {
+  workInProgress.memoizedState = nextState;
 }
 
-function memoizedProps(workInProcess, nextProps) {
-  workInProcess.memoizedProps = nextProps;
+function memoizedProps(workInProgress, nextProps) {
+  workInProgress.memoizedProps = nextProps;
 }
 
 function finishClassComponent(
   current,
-  workInProcess,
+  workInProgress,
   ctor,
   shouldUpdate,
   expirationTime
 ) {
   let nextChildren;
-  const instance = workInProcess.stateNode;
+  const instance = workInProgress.stateNode;
   nextChildren = instance.render();
 
-  reconcileChildren(current, workInProcess, nextChildren, expirationTime);
+  reconcileChildren(current, workInProgress, nextChildren, expirationTime);
 
-  memoizedState(workInProcess, instance.state);
-  memoizedProps(workInProcess, instance.props);
+  memoizedState(workInProgress, instance.state);
+  memoizedProps(workInProgress, instance.props);
 
-  return workInProcess.child;
+  return workInProgress.child;
 }
 
 function updateClassComponent(
   current,
-  workInProcess,
+  workInProgress,
   Component,
   nextProps,
   nextRenderexpirationTime
 ) {
   let shouldUpdate = false;
   if (current === null) {
-    if (workInProcess.stateNode === null) {
+    if (workInProgress.stateNode === null) {
       constructClassInstance(
-        workInProcess,
+        workInProgress,
         Component,
         nextProps,
         nextRenderexpirationTime
       );
       mountClassInstance(
-        workInProcess,
+        workInProgress,
         Component,
         nextProps,
         nextRenderexpirationTime
@@ -124,7 +129,7 @@ function updateClassComponent(
 
   return finishClassComponent(
     current,
-    workInProcess,
+    workInProgress,
     Component,
     shouldUpdate,
     nextRenderexpirationTime
@@ -139,11 +144,11 @@ function cloneUpdateQueue(queue) {
   };
 }
 
-function ensureworkInProcessQueueIsAClone(workInProcess, updateQueue) {
-  const current = workInProcess.alternate;
+function ensureworkInProcessQueueIsAClone(workInProgress, updateQueue) {
+  const current = workInProgress.alternate;
   if (current !== null) {
     if (updateQueue === current.updateQueue) {
-      updateQueue = workInProcess.updateQueue = cloneUpdateQueue(updateQueue);
+      updateQueue = workInProgress.updateQueue = cloneUpdateQueue(updateQueue);
     }
   }
 
@@ -151,7 +156,7 @@ function ensureworkInProcessQueueIsAClone(workInProcess, updateQueue) {
 }
 
 function getStateFromUpdate(
-  workInProcess,
+  workInProgress,
   queue,
   update,
   prevState,
@@ -172,13 +177,13 @@ function getStateFromUpdate(
 }
 
 function processUpdateQueue(
-  workInProcess,
-  updateQueue,
+  workInProgress,
+  queue,
   props,
   instance,
   nextRenderexpirationTime
 ) {
-  queue = ensureworkInProcessQueueIsAClone(workInProcess, updateQueue);
+  queue = ensureworkInProcessQueueIsAClone(workInProgress, queue);
   let newBaseState = queue.baseState;
   let resultState;
   let newExpirationWork = NoWork;
@@ -188,7 +193,7 @@ function processUpdateQueue(
 
   while (update !== null) {
     resultState = getStateFromUpdate(
-      workInProcess,
+      workInProgress,
       queue,
       update,
       resultState,
@@ -202,10 +207,13 @@ function processUpdateQueue(
   queue.baseState = newBaseState;
   queue.firstUpdate = newFirstUpdate;
 
-  workInProcess.memoizedState = resultState;
+  workInProgress.memoizedState = resultState;
 }
 
 function placeSingleChild(fiber) {
+  if (fiber.alternate === null) {
+    fiber.effectTag = Placement;
+  }
   return fiber;
 }
 
@@ -315,20 +323,20 @@ function mountChildrenFibers(
 
 function reconcileChildren(
   current,
-  workInProcess,
+  workInProgress,
   nextChildren,
   nextRenderexpirationTime
 ) {
   if (current === null) {
-    workInProcess.child = mountChildrenFibers(
-      workInProcess,
-      current.child,
+    workInProgress.child = mountChildrenFibers(
+      workInProgress,
+      null,
       nextChildren,
       nextRenderexpirationTime
     );
   } else {
-    workInProcess.child = reconcileChildrenFibers(
-      workInProcess,
+    workInProgress.child = reconcileChildrenFibers(
+      workInProgress,
       current.child,
       nextChildren,
       nextRenderexpirationTime
@@ -336,21 +344,21 @@ function reconcileChildren(
   }
 }
 
-function updateHostRoot(current, workInProcess, nextRenderexpirationTime) {
-  const updateQueue = workInProcess.updateQueue;
+function updateHostRoot(current, workInProgress, nextRenderexpirationTime) {
+  const updateQueue = workInProgress.updateQueue;
 
-  const prevState = workInProcess.memoizedState;
-  const prevProps = workInProcess.memoizedProps;
+  const prevState = workInProgress.memoizedState;
+  const nextProps = workInProgress.memoizedProps;
   const prevChildren = prevState !== null ? prevState.element : null;
 
   processUpdateQueue(
-    workInProcess,
+    workInProgress,
     updateQueue,
     nextProps,
     null,
     nextRenderexpirationTime
   );
-  const nextState = workInProcess.memoizedState;
+  const nextState = workInProgress.memoizedState;
   const nextChildren = nextState.element;
 
   if (prevChildren === nextChildren) {
@@ -359,48 +367,53 @@ function updateHostRoot(current, workInProcess, nextRenderexpirationTime) {
 
   reconcileChildren(
     current,
-    workInProcess,
+    workInProgress,
     nextChildren,
     nextRenderexpirationTime
   );
-  return workInProcess.child;
+  return workInProgress.child;
 }
 
-function updateHostComponent(current, workInProcess, expirationTime) {
-  const nextProps = workInProcess.memoizedProps;
-  reconcileChildren(current, workInProcess, nextProps.children, expirationTime);
-  memoizedProps(workInProcess, nextProps);
-  return workInProcess.child;
+function updateHostComponent(current, workInProgress, expirationTime) {
+  const nextProps = workInProgress.pendingProps;
+  reconcileChildren(
+    current,
+    workInProgress,
+    nextProps.children,
+    expirationTime
+  );
+  memoizedProps(workInProgress, nextProps);
+  return workInProgress.child;
 }
 
-function updateHostText(current, workInProcess) {
-  const props = workInProcess.pendingProps;
-  memoizedProps(workInProcess, props);
+function updateHostText(current, workInProgress) {
+  const props = workInProgress.pendingProps;
+  memoizedProps(workInProgress, props);
   return null;
 }
 
-function beginWork(current, workInProcess, nextRenderexpirationTime) {
-  switch (workInProcess.tag) {
+function beginWork(current, workInProgress, nextRenderexpirationTime) {
+  switch (workInProgress.tag) {
     case ClassComponent:
-      const Component = workInProcess.type;
-      const unsolvedProps = workInProcess.pendingProps;
+      const Component = workInProgress.type;
+      const unsolvedProps = workInProgress.pendingProps;
       return updateClassComponent(
         current,
-        workInProcess,
+        workInProgress,
         Component,
         unsolvedProps,
         nextRenderexpirationTime
       );
     case HostRoot:
-      return updateHostRoot(current, workInProcess, nextRenderexpirationTime);
+      return updateHostRoot(current, workInProgress, nextRenderexpirationTime);
     case HostComponent:
       return updateHostComponent(
         current,
-        workInProcess,
+        workInProgress,
         nextRenderexpirationTime
       );
     case HostText:
-      return updateHostText(current, workInProcess);
+      return updateHostText(current, workInProgress);
   }
 }
 
@@ -410,6 +423,10 @@ function findHighestPriorityRoot() {
   if (lastScheduleRoot !== null) {
     let root = lastScheduleRoot;
     while (root !== null) {
+      if (highestPriorityWork === NoWork) {
+        highestPriorityRoot = root;
+        highestPriorityWork = root.expirationTime;
+      }
       if (root === lastScheduleRoot) {
         break;
       }
@@ -425,68 +442,67 @@ function resetStack() {
 }
 
 function createworkInProcess(current, pendingProps, expirationTime) {
-  let workInProcess = current.alternate;
+  let workInProgress = current.alternate;
 
-  if (workInProcess === null) {
-    workInProcess = createFiber(current.tag, current.pendingProps);
-    workInProcess.type = curret.type;
-    workInProcess.stateNode = current.stateNode;
+  if (workInProgress === null) {
+    workInProgress = createFiber(current.tag, current.pendingProps);
+    workInProgress.type = current.type;
+    workInProgress.stateNode = current.stateNode;
 
-    workInProcess.alternate = current;
-    current.alternate = workInProcess;
+    workInProgress.alternate = current;
+    current.alternate = workInProgress;
   } else {
-    workInProcess.pendingProps = pendingProps;
+    workInProgress.pendingProps = pendingProps;
   }
 
-  workInProcess.expirationTime = current.expirationTime;
+  workInProgress.expirationTime = current.expirationTime;
 
-  workInProcess.child = current.child;
-  workInProcess.memoizedState = current.memoizedState;
-  workInProcess.memoizedProps = current.memoizedProps;
-  workInProcess.updateQueue = current.updateQueue;
+  workInProgress.child = current.child;
+  workInProgress.memoizedState = current.memoizedState;
+  workInProgress.memoizedProps = current.memoizedProps;
+  workInProgress.updateQueue = current.updateQueue;
 
-  workInProcess.sibling = current.sibling;
-  workInProcess.ref = current.ref;
-  workInProcess.index = current.index;
+  workInProgress.sibling = current.sibling;
+  workInProgress.ref = current.ref;
+  workInProgress.index = current.index;
 
-  return workInProcess;
+  return workInProgress;
 }
 
-
-function createTextInstance (newText, workInProcess ) {
-    return document.createTextNode(newText);
+function createTextInstance(newText, workInProgress) {
+  return document.createTextNode(newText);
 }
-function createInstance(type, workInProcess, nextProps) {
+function createInstance(type, workInProgress, nextProps) {
   const domInstance = document.createElement(type);
   return domInstance;
 }
 
-function appendInitialChildren(domParent, child ) {
-    domParent.appendChild(child);
+function appendInitialChildren(domParent, child) {
+  domParent.appendChild(child);
 }
 
-function appendAllChildren(domParent, workInProcess) {
+function appendAllChildren(domParent, workInProgress) {
   // 如果 tag 是 Host 类型的, 直接添加到 domParent 上
   // 如果 node.child !== null ; node.child.return = node; node = child;
-  // 如果 node === workInProcess, 表示已经到达了根节点, 中断操作
+  // 如果 node === workInProgress, 表示已经到达了根节点, 中断操作
   // 此时 node.child 为 null, 应该处理 node.sibling 了
   // 如果 node.sibling 为空, 则 node = node.return;  处理当前节点的父节点
   // 如果 node.sibling 不为空, node.sibling.return = node.return; node = node.sibling
 
-  let node = workInProcess.child;
+  let node = workInProgress.child;
   while (node !== null) {
-    if (node.type === HostComponent || node.type === HostText) {
-        appendInitialChildren(domParent, node.stateNode);
+    if (node.tag === HostComponent || node.tag === HostText) {
+      appendInitialChildren(domParent, node.stateNode);
     } else if (node.child !== null) {
       node.child.return = node;
       node = node.child;
       continue;
     }
-    if (node === workInProcess) {
+    if (node === workInProgress) {
       return;
     }
     while (node.sibling === null) {
-      if (node.return === null || node.return === workInProcess) {
+      if (node.return === null || node.return === workInProgress) {
         return;
       }
       node = node.return;
@@ -496,37 +512,42 @@ function appendAllChildren(domParent, workInProcess) {
   }
 }
 
-function completeWork(current, workInProcess, expirationTime) {
-  const type = workInProcess.type;
-  const newProps = workInProcess.pendingProps;
+function updateHostContainer(workInProgress) {
+  // console.log(workInProgress);
+}
 
-  switch (workInProcess.type) {
+function completeWork(current, workInProgress, expirationTime) {
+  const type = workInProgress.type;
+  const newProps = workInProgress.pendingProps;
+
+  switch (workInProgress.tag) {
+    case HostRoot: {
+      updateHostContainer(workInProgress);
+      break;
+    }
     case HostText: {
-      workInProcess.stateNode = createTextInstance(
-        newProps,
-        workInProcess,
-      );
+      workInProgress.stateNode = createTextInstance(newProps, workInProgress);
       break;
     }
     case HostComponent: {
-      const instance = createInstance(type, workInProcess, newProps);
-      appendAllChildren(instance, workInProcess);
-      workInProcess.stateNode = instance;
+      const instance = createInstance(type, workInProgress, newProps);
+      appendAllChildren(instance, workInProgress);
+      workInProgress.stateNode = instance;
       break;
     }
   }
   return null;
 }
 
-function completeUnitOfWork(workInProcess) {
+function completeUnitOfWork(workInProgress) {
   while (true) {
-    const current = workInProcess.current;
-    const siblingFiber = workInProcess.sibling;
-    const returnFiber = workInProcess.return;
+    const current = workInProgress.current;
+    const siblingFiber = workInProgress.sibling;
+    const returnFiber = workInProgress.return;
 
     nextUnitOfWork = completeWork(
       current,
-      workInProcess,
+      workInProgress,
       nextRenderexpirationTime
     );
 
@@ -534,10 +555,103 @@ function completeUnitOfWork(workInProcess) {
     if (next !== null) {
       return next;
     }
+    if(returnFiber === null) {
+      return null;
+    }
+
+    /**
+     * 在 mount 阶段, 此时的 returnFiber 的firstEffect 和 lastEffect 都是 null
+     * 而且是由 子组件给 returnFiber 的这两个字段赋值
+     * 比如:
+     *        leaf -> parent -> root
+     * 刚开始时各自是:
+     *  [leaf, parent, root]:
+     *        returnFiber: {
+     *           firstEffect: null,
+     *           lastEffect : null
+     *        }
+     *        workInProgress: {
+     *           firstEffect: null,
+     *           lastEffect : null
+     *        }
+     *  left 走完这里的流程后:
+     *
+     *  leaf:
+     *        returnFiber: {
+     *           firstEffect: leaf,
+     *           lastEffect : leaf
+     *        }
+     *        workInProgress: {
+     *           firstEffect: null,
+     *           lastEffect : null
+     *        }
+     *
+     *  轮到 parent 时:
+     *        returnFiber: {
+     *           firstEffect: null,
+     *           lastEffect : null
+     *        } // returnFiber = root
+     *        workInProgress: {
+     *           firstEffect: leaf,
+     *           lastEffect : leaf
+     *        }
+     *  此时要注意的是后面 commit phrase 的阶段, 要先处理 leaf (记得 componentDidMount 是要先 leaf -> parent ->root)
+     *  所以这里的链表要做处理
+     *  returnFiber.firstEffect = workInProgress.firstEffect // 第一个处理的总是最外围的 leaf
+     *  接着要处理 lastEffect , 此时也要考虑 returnFiber 有多个子组件的情况
+     *  处理完 parent 后:
+     *
+     *        returnFiber: {
+     *           firstEffect: leaf,
+     *           lastEffect : leaf
+     *        } // returnFiber = root
+     *
+     *        leaf.nextEffect = workInProgress
+     *
+     *        workInProgress: {
+     *           firstEffect: leaf,
+     *           lastEffect : leaf
+     *        }
+     *  下一次 为 root 时就跳出循环了
+     */
+
+    if(returnFiber.firstEffect === null) {
+       returnFiber.firstEffect = workInProgress.firstEffect;
+    }
+
+    if(workInProgress.lastEffect !== null) {
+      if(returnFiber.lastEffect !== null) {
+        returnFiber.lastEffect.nextEffect = workInProgress.firstEffect;
+      }
+      returnFiber.lastEffect = workInProgress.lastEffect
+    }
+
+    // effect 是另外一个链表, 用来处理 side effect, 包括将 vdom 插入到 dom 上
+    // 此时处理的顺序是 :
+    //                child1
+    //                child2 - parent - root
+    //                child3
+    // 经过处理后:
+    //          parent.lastEffect = child3
+    //          parent.firstEffect = child1
+    //          child1.nextEffect = child2
+    //          child2.nextEffect = child3
+    //          root.lastEffect = root.firstEffect = parent;
+    //
+    const effectTag = workInProgress.effectTag;
+    if (effectTag > PerformedWork) {
+      if (returnFiber.lastEffect !== null) {
+        returnFiber.lastEffect.nextEffect = workInProgress;
+      } else {
+        returnFiber.firstEffect = workInProgress;
+      }
+      returnFiber.lastEffect = workInProgress;
+    }
+
     if (siblingFiber !== null) {
       return siblingFiber;
     } else if (returnFiber !== null) {
-      workInProcess = returnFiber;
+      workInProgress = returnFiber;
       continue;
     } else {
       return null;
@@ -545,13 +659,13 @@ function completeUnitOfWork(workInProcess) {
   }
 }
 
-function performUnitOfWork(workInProcess) {
-  const current = workInProcess.alternate;
+function performUnitOfWork(workInProgress) {
+  const current = workInProgress.alternate;
   let next;
-  next = beginWork(current, workInProcess, nextRenderexpirationTime);
+  next = beginWork(current, workInProgress, nextRenderexpirationTime);
 
   if (next === null) {
-    next = completeUnitOfWork(workInProcess);
+    next = completeUnitOfWork(workInProgress);
   }
 
   return next;
@@ -583,8 +697,60 @@ function renderRoot(root, isYield, isExpired) {
   try {
     workLoop();
   } catch (e) {
+    console.error(e);
     fatal = true;
   }
+  isWorking = false;
+  nextRoot = null;
+  const rootWorkInProcess = root.current.alternate;
+
+  onCompleted(root, rootWorkInProcess, expirationTime);
+}
+
+function onCompleted(root, finishedWork, expirationTime) {
+  root.finishedWork = finishedWork;
+}
+
+function commitPlacement(nextEffect) {
+  console.log(nextEffect);
+}
+
+function commitAllHostEffects() {
+  while (nextEffect !== null) {
+    const effectTag = nextEffect.effectTag;
+    const primaryEffect = effectTag & Placement;
+    switch (primaryEffect) {
+      case Placement: {
+        commitPlacement(nextEffect);
+        break;
+      }
+      default:
+      //
+    }
+    nextEffect = nextEffect.nextEffect;
+  }
+}
+
+function completeRoot(root, finishedWork, expirationTime) {
+  isWorking = true;
+  isCommitting = true;
+
+  root.finishedWork = null;
+
+  let firstEffect;
+  firstEffect = finishedWork.firstEffect;
+  nextEffect = firstEffect;
+
+  while (nextEffect !== null) {
+    try {
+      commitAllHostEffects();
+    } catch (e) {
+      console.error(e);
+      return;
+    }
+  }
+
+  commitWork(root, finishedWork);
 }
 
 function performWorkOnRoot(root, expirationTime, isExpired) {
@@ -601,7 +767,6 @@ function performWorkOnRoot(root, expirationTime, isExpired) {
       }
     }
   }
-
   isRendering = false;
 }
 
@@ -660,7 +825,7 @@ function createUpdateQueue(baseState) {
 
 function appendUpdateToQueue(queue, update) {
   if (queue.lastUpdate === null) {
-    queue.firstUpdate = quque.lastUpdate = update;
+    queue.firstUpdate = queue.lastUpdate = update;
   }
 }
 
@@ -669,11 +834,11 @@ function enqueueUpdater(fiber, update) {
   let queue1;
   let queue2;
   if (alternate === null) {
-    queue1 = alternate.updateQueue;
+    queue1 = fiber.updateQueue;
     queue2 = null;
 
     if (queue1 === null) {
-      queue1 = alternate.updateQueue = createUpdateQueue(fiber.memoizedState);
+      queue1 = fiber.updateQueue = createUpdateQueue(fiber.memoizedState);
     }
   }
 
@@ -707,7 +872,7 @@ function scheduleWork(fiber, expirationTime) {
 
   if (!isWorking || isCommitting) {
     const rootexpirationTime = root.expirationTime;
-    requestWork(fiber, rootexpirationTime);
+    requestWork(root, rootexpirationTime);
   }
 }
 
@@ -721,7 +886,7 @@ function createUpdate(expirationTime) {
   };
 }
 
-function scheduleRootUpdate(element, current, expirationTime, callback) {
+function scheduleRootUpdate(current, element, expirationTime, callback) {
   const updater = createUpdate(expirationTime);
 
   updater.payload = {
@@ -757,7 +922,7 @@ function updateContainerAtExpiration(
     container.pendingContext = context;
   }
 
-  return scheduleRootUpdate(current, container, expirationTime, callback);
+  return scheduleRootUpdate(current, elements, expirationTime, callback);
 }
 
 function updateContainer(elements, container, parentComponent, callback) {
