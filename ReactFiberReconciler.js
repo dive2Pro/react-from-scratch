@@ -72,6 +72,7 @@ function mountClassInstance(
 function memoizedState(workInProcess, nextState) {
   workInProcess.memoizedState = nextState;
 }
+
 function memoizedProps(workInProcess, nextProps) {
   workInProcess.memoizedProps = nextProps;
 }
@@ -187,7 +188,7 @@ function processUpdateQueue(
 
   while (update !== null) {
     resultState = getStateFromUpdate(
-      workInProgress,
+      workInProcess,
       queue,
       update,
       resultState,
@@ -205,7 +206,6 @@ function processUpdateQueue(
 }
 
 function placeSingleChild(fiber) {
-
   return fiber;
 }
 
@@ -374,9 +374,9 @@ function updateHostComponent(current, workInProcess, expirationTime) {
 }
 
 function updateHostText(current, workInProcess) {
-    const props = workInProcess.pendingProps;
-    memoizedProps(workInProcess, props);
-    return null;
+  const props = workInProcess.pendingProps;
+  memoizedProps(workInProcess, props);
+  return null;
 }
 
 function beginWork(current, workInProcess, nextRenderexpirationTime) {
@@ -399,11 +399,8 @@ function beginWork(current, workInProcess, nextRenderexpirationTime) {
         workInProcess,
         nextRenderexpirationTime
       );
-    case HostText:  
-        return updateHostText(
-            current,
-            workInProcess
-        )
+    case HostText:
+      return updateHostText(current, workInProcess);
   }
 }
 
@@ -455,31 +452,97 @@ function createworkInProcess(current, pendingProps, expirationTime) {
   return workInProcess;
 }
 
-function completeUnitOfWork(workInProcess) {
-    while(true) {
-        const current = workInProcess.current;
-        const siblingFiber = workInProcess.sibling;
-        const returnFiber = workInProcess.return;
 
-        nextUnitOfWork = completeWork(
-            current,
-            workInProcess,
-            nextRenderexpirationTime
-        );
-        
-        let next = nextUnitOfWork;
-        if(next !== null) {
-            return next;
-        }
-        if(siblingFiber !== null) {
-            return siblingFiber;
-        } else if(returnFiber !== null) {
-            workInProcess = returnFiber;
-            continue;
-        } else {
-            return null;
-        }
+function createTextInstance (newText, workInProcess ) {
+    return document.createTextNode(newText);
+}
+function createInstance(type, workInProcess, nextProps) {
+  const domInstance = document.createElement(type);
+  return domInstance;
+}
+
+function appendInitialChildren(domParent, child ) {
+    domParent.appendChild(child);
+}
+
+function appendAllChildren(domParent, workInProcess) {
+  // 如果 tag 是 Host 类型的, 直接添加到 domParent 上
+  // 如果 node.child !== null ; node.child.return = node; node = child;
+  // 如果 node === workInProcess, 表示已经到达了根节点, 中断操作
+  // 此时 node.child 为 null, 应该处理 node.sibling 了
+  // 如果 node.sibling 为空, 则 node = node.return;  处理当前节点的父节点
+  // 如果 node.sibling 不为空, node.sibling.return = node.return; node = node.sibling
+
+  let node = workInProcess.child;
+  while (node !== null) {
+    if (node.type === HostComponent || node.type === HostText) {
+        appendInitialChildren(domParent, node.stateNode);
+    } else if (node.child !== null) {
+      node.child.return = node;
+      node = node.child;
+      continue;
     }
+    if (node === workInProcess) {
+      return;
+    }
+    while (node.sibling === null) {
+      if (node.return === null || node.return === workInProcess) {
+        return;
+      }
+      node = node.return;
+    }
+    node.sibling.return = node.return;
+    node = node.sibling;
+  }
+}
+
+function completeWork(current, workInProcess, expirationTime) {
+  const type = workInProcess.type;
+  const newProps = workInProcess.pendingProps;
+
+  switch (workInProcess.type) {
+    case HostText: {
+      workInProcess.stateNode = createTextInstance(
+        newProps,
+        workInProcess,
+      );
+      break;
+    }
+    case HostComponent: {
+      const instance = createInstance(type, workInProcess, newProps);
+      appendAllChildren(instance, workInProcess);
+      workInProcess.stateNode = instance;
+      break;
+    }
+  }
+  return null;
+}
+
+function completeUnitOfWork(workInProcess) {
+  while (true) {
+    const current = workInProcess.current;
+    const siblingFiber = workInProcess.sibling;
+    const returnFiber = workInProcess.return;
+
+    nextUnitOfWork = completeWork(
+      current,
+      workInProcess,
+      nextRenderexpirationTime
+    );
+
+    let next = nextUnitOfWork;
+    if (next !== null) {
+      return next;
+    }
+    if (siblingFiber !== null) {
+      return siblingFiber;
+    } else if (returnFiber !== null) {
+      workInProcess = returnFiber;
+      continue;
+    } else {
+      return null;
+    }
+  }
 }
 
 function performUnitOfWork(workInProcess) {
