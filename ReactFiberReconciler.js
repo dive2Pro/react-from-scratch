@@ -574,7 +574,7 @@ function completeUnitOfWork(workInProgress) {
      *           firstEffect: null,
      *           lastEffect : null
      *        }
-     *  left 走完这里的流程后:
+     *  leaf 走完这里的流程后:
      *
      *  leaf:
      *        returnFiber: {
@@ -587,11 +587,12 @@ function completeUnitOfWork(workInProgress) {
      *        }
      *
      *  轮到 parent 时:
+     *      // returnFiber = root
      *        returnFiber: {
      *           firstEffect: null,
      *           lastEffect : null
-     *        } // returnFiber = root
-     *        workInProgress: {
+     *        } 
+     *        workInProgress(parent): {
      *           firstEffect: leaf,
      *           lastEffect : leaf
      *        }
@@ -711,8 +712,85 @@ function onCompleted(root, finishedWork, expirationTime) {
   root.finishedWork = finishedWork;
 }
 
-function commitPlacement(nextEffect) {
-  console.log(nextEffect);
+
+
+function isHost(fiber) {
+  console.log(fiber)
+  return fiber.tag === HostComponent || fiber.tag === HostRoot;
+}
+
+function getParentHost(fiber) {
+  let parent = fiber.return;
+  while(parent !== null) {
+    if(isHost(parent)) {
+      return parent;
+    }
+    parent = parent.return;
+  }
+}
+
+function appendChildToContainer(container, child) {
+  container.appendChild(child);
+}
+
+function appendChild(parentNode, child) {
+  parentNode.appendChild(child);
+}
+
+/**
+ * 拿到 nextEffect 的 HostX [HostRoot, HostComponent], 
+ * 根据 其值可以知道是插入到 containerInfo 还是 添加到其 Host 上;
+ * 
+ * 同时也会把 finishedWorkd 的 sibling 添加到 Host
+ *  添加时要注意, 也分为了两种情况:
+ *  1. 当前 node 为 [HostComponent, HostText](在v16中, React 的每一个 Component 必须有一个根节点, 都属于这种情况)
+ *  2. 节点是空的, 或者是说功能节点, 返回 child (child 可以是 Array)
+ * 
+ * @param {*} finishedWork -  在 mount 阶段, finishedWork 是 leaf 到 root 的顺序传递的
+ */
+function commitPlacement(finishedWork) {
+  const parentFiber = getParentHost(finishedWork)
+
+  let isContainer = false;
+  let parent;
+  if(parentFiber.tag === HostComponent) {
+    parent = parentFiber.stateNode;
+  } else if(parentFiber.tag === HostRoot) {
+    isContainer = true;
+    parent = parentFiber.stateNode.containerInfo;
+  }
+  let node = finishedWork;
+  while(true) {
+    if(node.tag === HostComponent || node.tag === HostText) {
+      if(isContainer) {
+        appendChildToContainer(parent, node.stateNode);
+      } else {
+        appendChild(parent, node.stateNode);
+      }
+    } else if(node.child !== null) {
+      node.child.return = node;
+      node = node.child;
+      continue;
+    }
+
+    if(node === finishedWork) {
+      return;
+    }
+    // 添加 sibling 
+    // 若 sibling 为 null, 而且正好 node 是某个 Array 的子组件分支中的一个, 此时的 node 要指向 node 的 parent(node.return)
+    // 并且这个过程是持续上溯的
+    while(node.sibling === null) {
+      if(node.return === null || node.return === finishedWork) {
+        return;
+      }
+      node = node.return;
+    }
+
+    // node.sibling 也是一条链表, 并且是单向的
+    node.sibling.return = node.return;
+    node = node.sibling;
+
+  }
 }
 
 function commitAllHostEffects() {
