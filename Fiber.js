@@ -32,6 +32,7 @@ function Fiber(tag, pendingProps) {
   this.firstEffect = null;
   this.lastEffect = null;
   this.nextEffect = null;
+  this.stateNode = null;
 }
 
 function FiberRoot(container, tag) {

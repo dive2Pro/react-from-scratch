@@ -1,9 +1,10 @@
 
-class Component {
-    setState(updater, callback) {
-        // 找到当前组件树的根
-    }
+
+function Component(props) {
+    this.props = props;
 }
+
+Component.prototype.isReactComponent = {};
 
 export {
     Component
