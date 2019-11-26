@@ -1,5 +1,8 @@
 {
   "devDependencies": {
+    "@babel/core": "^7.7.4",
+    "@babel/preset-react": "^7.7.4",
+    "parcel": "^1.12.4",
     "prettier": "^1.19.1"
   },
   "scripts": {
