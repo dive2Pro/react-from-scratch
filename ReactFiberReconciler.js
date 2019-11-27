@@ -8,6 +8,7 @@ import {
   createFiberFromText,
   createFiber,
   Placement,
+  Update,
   PerformedWork
 } from "./Fiber";
 
@@ -33,7 +34,9 @@ export const REACT_ELEMENT_TYPE = 0x001;
 
 const UpdateState = 0;
 
-function commitWork() {}
+function commitWork() {
+
+}
 
 const classComponentUpdater = {};
 
@@ -59,6 +62,12 @@ function constructClassInstance(
   return instance;
 }
 
+function callComponentWillMount(workInProgress, instance) {
+  if(typeof instance.componentWillMount === 'function') {
+      instance.componentWillMount();
+  }
+}
+
 function mountClassInstance(
   workInProgress,
   Component,
@@ -72,6 +81,9 @@ function mountClassInstance(
 
   if (typeof instance.componentWillMount === "function") {
     callComponentWillMount(workInProgress, instance);
+  }
+  if(typeof instance.componentDidMount === 'function') {
+    workInProgress.effectTag |= Update;
   }
 }
 
@@ -592,6 +604,53 @@ function updateHostContainer(workInProgress) {
   // console.log(workInProgress);
 }
 
+function initialChildren(domElement, type, newProps) {
+  setInitalProperties(domElement, type, newProps);
+
+}
+
+function dangerousStyleValue(name, value) {
+  const isEmpty = value == null || typeof value === 'boolean' || value === '';
+  if(isEmpty) {
+    return ''
+  }
+
+  if(typeof value === 'number' && value !== 0) {
+    return value + 'px';
+  }
+  return ("" + value).trim();
+}
+
+function setValueForStyles(node, styles)  {
+  const style = node.style;
+  for(let styleName in styles) {
+    if(!styles.hasOwnProperty(styleName)) {
+      continue;
+    }
+    const styleValue = dangerousStyleValue(styleName, styles[styleName]);
+
+    if(styleName === 'float') {
+      styleName =  'cssFloat';
+    }
+
+    style[styleName] = styleValue;
+
+  }
+}
+function setInitalProperties(domElement, type, newProps) {
+  for(const propKey in newProps) {
+    if(!newProps.hasOwnProperty(propKey)) {
+      continue;
+    }
+    const nextProp = newProps[propKey];
+    if(propKey === 'style') {
+      setValueForStyles(domElement, nextProp);
+    } else {
+
+    }
+  }
+}
+
 function completeWork(current, workInProgress, expirationTime) {
   const type = workInProgress.type;
   const newProps = workInProgress.pendingProps;
@@ -608,6 +667,7 @@ function completeWork(current, workInProgress, expirationTime) {
     case HostComponent: {
       const instance = createInstance(type, workInProgress, newProps);
       appendAllChildren(instance, workInProgress);
+      initialChildren(instance, type, newProps);
       workInProgress.stateNode = instance;
       break;
     }
@@ -789,7 +849,6 @@ function onCompleted(root, finishedWork, expirationTime) {
 }
 
 function isHost(fiber) {
-  console.log(fiber);
   return fiber.tag === HostComponent || fiber.tag === HostRoot;
 }
 
@@ -869,10 +928,14 @@ function commitPlacement(finishedWork) {
 function commitAllHostEffects() {
   while (nextEffect !== null) {
     const effectTag = nextEffect.effectTag;
-    const primaryEffect = effectTag & Placement;
+    const primaryEffect = effectTag & (Placement | Update);
     switch (primaryEffect) {
       case Placement: {
         commitPlacement(nextEffect);
+        break;
+      }
+      case Update: {
+        console.log(nextEffect)
         break;
       }
       default:
@@ -881,6 +944,53 @@ function commitAllHostEffects() {
     nextEffect = nextEffect.nextEffect;
   }
 }
+
+function commitLifeCycles(finishedRoot, current, finishedWork) {
+  switch(finishedWork.tag) {
+    case ClassComponent: {
+      const instance = finishedWork.stateNode;
+      if(finishedWork.effectTag & Update) {
+        if(current === null) {
+          instance.props = instance.memoizedProps;
+          instance.state = instance.memoizedState;
+          instance.componentDidMount();
+        }
+      }
+
+      return;
+    }
+    case HostRoot: {
+      return;
+    }
+    case HostComponent: {
+      const instance = finishedWork.stateNode;
+      if(current === null && finishedWork.effectTag & Update) {
+        const type = finishedWork.type;
+        const props = finishedWork.memoizedProps;
+        commitMount(instance, type, props, finishedWork);
+      }
+      return;
+    }
+  }
+}
+
+function commitAllLifeCycle(finishedRoot) {
+  while(nextEffect !== null) {
+
+    if(nextEffect.effectTag & (Update)) {
+      const current = nextEffect.alternate;
+      commitLifeCycles(
+        finishedRoot,
+        current,
+        nextEffect
+      )
+    }
+    const next = nextEffect.nextEffect;
+    nextEffect.nextEffect = null;
+    nextEffect = next;
+  }
+}
+
 
 function completeRoot(root, finishedWork, expirationTime) {
   isWorking = true;
@@ -894,6 +1004,7 @@ function completeRoot(root, finishedWork, expirationTime) {
 
   while (nextEffect !== null) {
     try {
+      // vdom -> dom 的 effects
       commitAllHostEffects();
     } catch (e) {
       console.error(e);
@@ -901,7 +1012,24 @@ function completeRoot(root, finishedWork, expirationTime) {
     }
   }
 
+  nextEffect = firstEffect;
+  while(nextEffect !== null) {
+    try {
+      commitAllLifeCycle(root)
+    } catch(e) {
+      console.error(e)
+      return;
+    }
+  }
+
+  isCommitting = false;
+  isWorking =false;
+
   commitWork(root, finishedWork);
+  onCommit(root);
+}
+function onCommit(root) {
+  root.finishedWork = null;
 }
 
 function performWorkOnRoot(root, expirationTime, isExpired) {

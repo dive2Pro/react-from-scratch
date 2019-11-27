@@ -9,6 +9,7 @@ export const NoEffect = /*              */ 0b00000000000;
 export const PerformedWork = /*         */ 0b00000000001;
 export const Incomplete = /*            */ 0b01000000000;
 export const Placement = /*             */ 0b00000000010;
+export const Update = /*                */ 0b00000000100;
 
 function Fiber(tag, pendingProps) {
   this.tag = tag;
