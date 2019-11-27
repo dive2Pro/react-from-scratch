@@ -2,7 +2,7 @@ import {REACT_ELEMENT_TYPE} from './ReactFiberReconciler'
 import { Component } from './ReactBaseClass';
 
 const React = {
-    createElement: (type, config, children) => {
+    createElement: function (type, config, children) {
 
         const props =  {};
 
@@ -12,7 +12,16 @@ const React = {
             }
         }
 
-        props.children = children;
+        const childrenLength = arguments.length - 2;
+        if(childrenLength === 1) {
+            props.children = children;
+        } else {
+            const lastChildren = Array(childrenLength);
+            for(let i = 0 ; i < childrenLength ; i ++) {
+                lastChildren.push(arguments[i + 2]);
+            }
+            props.children = lastChildren;
+        }
 
         if(type.defaultProps) {
             for(let propName in type.defaultProps) {

@@ -5,10 +5,15 @@ import React from "./React";
 //     children: "Hello World"
 // }), document.body)
 
+class Main extends React.Component {
+  render() {
+    return <div>Coco</div>
+  }
+}
+
 class App extends React.Component {
   render() {
-    console.log('render')
-    return <div>Hello World!</div>;
+    return <div>Hello World! <Main /> </div>;
   }
 }
 

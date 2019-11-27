@@ -13,6 +13,7 @@ import {
 
 const HostComponent = 1;
 const NormalClass = 9;
+const Fragment = 3;
 let isWorking = false;
 let isCommitting = false;
 let isRendering = false;
@@ -226,6 +227,11 @@ function shouldConstruct(Component) {
     prototype.isReactComponent !== null
   );
 }
+function createFiberFromFragment(elements, mode, expirationTime) {
+  const fiber = createFiber(Fragment, elements )
+  fiber.expirationTime = expirationTime;
+  return fiber;
+}
 
 function createFiberFromElement(element, mode, expirationTime) {
   const pendingProps = element.props;
@@ -274,6 +280,68 @@ function reconcileSingleElement(
   return created;
 }
 
+function createChild(returnFiber, newChild, expirationTime) {
+  if (typeof newChild === "number" || typeof newChild === "string") {
+    const created = createFiberFromText(
+      "" + newChild,
+      returnFiber.mode,
+      expirationTime
+    );
+    created.return = returnFiber;
+    return created;
+  }
+
+  if (typeof newChild === "object" && newChild !== null) {
+    switch (newChild.$$typeof) {
+      case REACT_ELEMENT_TYPE: {
+        const created =  createFiberFromElement(newChild, returnFiber.mode, expirationTime);
+        created.return = returnFiber
+        return created;
+      }
+    }
+
+    if (Array.isArray(newChild)) {
+      const created =  createFiberFromFragment(newChild, returnFiber.mode, expirationTime);
+      createChild.return = returnFiber;
+      return created;
+    }
+  }
+  return null;
+}
+
+function reconcileArrayChildren(
+  returnFiber,
+  currentFirstChild,
+  newChild,
+  expirationTime
+) {
+  let resultingFirstFiber = null;
+  let newIndex = 0;
+  let oldFiber = currentFirstChild;
+  let previousFiber = null;
+
+  if (oldFiber === null) {
+    for (; newIndex < newChild.length; newIndex++) {
+      const newFiber = createChild(
+        returnFiber,
+        newChild[newIndex],
+        expirationTime
+      );
+      if (newFiber === null) {
+        continue;
+      }
+      if (resultingFirstFiber === null) {
+        resultingFirstFiber = newFiber;
+      } else if (previousFiber !== null) {
+        previousFiber.sibling = newFiber;
+      }
+      previousFiber = newFiber;
+    }
+
+    return resultingFirstFiber;
+  }
+}
+
 function reconcileChildrenFibers(
   returnFiber,
   currentFirstChild,
@@ -303,6 +371,14 @@ function reconcileChildrenFibers(
         "" + newChild,
         expirationTime
       )
+    );
+  }
+  if (Array.isArray(newChild)) {
+    return reconcileArrayChildren(
+      returnFiber,
+      currentFirstChild,
+      newChild,
+      expirationTime
     );
   }
 }
@@ -555,7 +631,7 @@ function completeUnitOfWork(workInProgress) {
     if (next !== null) {
       return next;
     }
-    if(returnFiber === null) {
+    if (returnFiber === null) {
       return null;
     }
 
@@ -591,7 +667,7 @@ function completeUnitOfWork(workInProgress) {
      *        returnFiber: {
      *           firstEffect: null,
      *           lastEffect : null
-     *        } 
+     *        }
      *        workInProgress(parent): {
      *           firstEffect: leaf,
      *           lastEffect : leaf
@@ -616,15 +692,15 @@ function completeUnitOfWork(workInProgress) {
      *  下一次 为 root 时就跳出循环了
      */
 
-    if(returnFiber.firstEffect === null) {
-       returnFiber.firstEffect = workInProgress.firstEffect;
+    if (returnFiber.firstEffect === null) {
+      returnFiber.firstEffect = workInProgress.firstEffect;
     }
 
-    if(workInProgress.lastEffect !== null) {
-      if(returnFiber.lastEffect !== null) {
+    if (workInProgress.lastEffect !== null) {
+      if (returnFiber.lastEffect !== null) {
         returnFiber.lastEffect.nextEffect = workInProgress.firstEffect;
       }
-      returnFiber.lastEffect = workInProgress.lastEffect
+      returnFiber.lastEffect = workInProgress.lastEffect;
     }
 
     // effect 是另外一个链表, 用来处理 side effect, 包括将 vdom 插入到 dom 上
@@ -712,17 +788,15 @@ function onCompleted(root, finishedWork, expirationTime) {
   root.finishedWork = finishedWork;
 }
 
-
-
 function isHost(fiber) {
-  console.log(fiber)
+  console.log(fiber);
   return fiber.tag === HostComponent || fiber.tag === HostRoot;
 }
 
 function getParentHost(fiber) {
   let parent = fiber.return;
-  while(parent !== null) {
-    if(isHost(parent)) {
+  while (parent !== null) {
+    if (isHost(parent)) {
       return parent;
     }
     parent = parent.return;
@@ -738,49 +812,49 @@ function appendChild(parentNode, child) {
 }
 
 /**
- * 拿到 nextEffect 的 HostX [HostRoot, HostComponent], 
+ * 拿到 nextEffect 的 HostX [HostRoot, HostComponent],
  * 根据 其值可以知道是插入到 containerInfo 还是 添加到其 Host 上;
- * 
+ *
  * 同时也会把 finishedWorkd 的 sibling 添加到 Host
  *  添加时要注意, 也分为了两种情况:
  *  1. 当前 node 为 [HostComponent, HostText](在v16中, React 的每一个 Component 必须有一个根节点, 都属于这种情况)
  *  2. 节点是空的, 或者是说功能节点, 返回 child (child 可以是 Array)
- * 
+ *
  * @param {*} finishedWork -  在 mount 阶段, finishedWork 是 leaf 到 root 的顺序传递的
  */
 function commitPlacement(finishedWork) {
-  const parentFiber = getParentHost(finishedWork)
+  const parentFiber = getParentHost(finishedWork);
 
   let isContainer = false;
   let parent;
-  if(parentFiber.tag === HostComponent) {
+  if (parentFiber.tag === HostComponent) {
     parent = parentFiber.stateNode;
-  } else if(parentFiber.tag === HostRoot) {
+  } else if (parentFiber.tag === HostRoot) {
     isContainer = true;
     parent = parentFiber.stateNode.containerInfo;
   }
   let node = finishedWork;
-  while(true) {
-    if(node.tag === HostComponent || node.tag === HostText) {
-      if(isContainer) {
+  while (true) {
+    if (node.tag === HostComponent || node.tag === HostText) {
+      if (isContainer) {
         appendChildToContainer(parent, node.stateNode);
       } else {
         appendChild(parent, node.stateNode);
       }
-    } else if(node.child !== null) {
+    } else if (node.child !== null) {
       node.child.return = node;
       node = node.child;
       continue;
     }
 
-    if(node === finishedWork) {
+    if (node === finishedWork) {
       return;
     }
-    // 添加 sibling 
+    // 添加 sibling
     // 若 sibling 为 null, 而且正好 node 是某个 Array 的子组件分支中的一个, 此时的 node 要指向 node 的 parent(node.return)
     // 并且这个过程是持续上溯的
-    while(node.sibling === null) {
-      if(node.return === null || node.return === finishedWork) {
+    while (node.sibling === null) {
+      if (node.return === null || node.return === finishedWork) {
         return;
       }
       node = node.return;
@@ -789,7 +863,6 @@ function commitPlacement(finishedWork) {
     // node.sibling 也是一条链表, 并且是单向的
     node.sibling.return = node.return;
     node = node.sibling;
-
   }
 }
 
