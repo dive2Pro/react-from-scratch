@@ -32,17 +32,62 @@ let nextEffect = null;
 
 export const REACT_ELEMENT_TYPE = 0x001;
 
+const rootInstanceStackCursor = {
+  current: {}
+}
+
+function push(cursor, value, fiber) {
+  cursor.current = value;
+}
+
+function requiredContext(c) {
+  // validation
+  return c;
+}
+
+function getRootHostContainer() {
+  const rootInstance = requiredContext(rootInstanceStackCursor.current);
+  return rootInstance;
+}
+
+function pushHostContainer(fiber, nextRootInstance) {
+  push(rootInstanceStackCursor, nextRootInstance, fiber);
+}
+
+function pushHostRootContext(workInProgress ) {
+  pushHostContainer(workInProgress, workInProgress.stateNode.containerInfo);
+}
+
+/**
+ * 
+ */
+const ReactInstanceMap = {
+  set(key, value) {
+    key._reactInternalInstance = value;
+  },
+  get(key) {
+    return key._reactInternalInstance;
+  }
+}
+
 const UpdateState = 0;
 
 function commitWork() {
 
 }
 
-const classComponentUpdater = {};
+const classComponentUpdater = {
+  enqueueUpdater(inst, payload, callback) {
+
+  }
+};
 
 function adoptClassInstance(workInProgress, instance) {
   instance.updater = classComponentUpdater;
   workInProgress.stateNode = instance;
+
+  ReactInstanceMap.set(instance, workInProgress);
+
 }
 
 function constructClassInstance(
@@ -433,6 +478,9 @@ function reconcileChildren(
 }
 
 function updateHostRoot(current, workInProgress, nextRenderexpirationTime) {
+
+  pushHostRootContext(workInProgress);
+
   const updateQueue = workInProgress.updateQueue;
 
   const prevState = workInProgress.memoizedState;
@@ -604,9 +652,8 @@ function updateHostContainer(workInProgress) {
   // console.log(workInProgress);
 }
 
-function initialChildren(domElement, type, newProps) {
-  setInitalProperties(domElement, type, newProps);
-
+function initialChildren(domElement, type, newProps, rootContainerInstance) {
+  setInitalProperties(domElement, type, newProps, rootContainerInstance);
 }
 
 function dangerousStyleValue(name, value) {
@@ -637,7 +684,29 @@ function setValueForStyles(node, styles)  {
 
   }
 }
-function setInitalProperties(domElement, type, newProps) {
+
+/**
+ *   监听 document 对象上的冒泡事件
+ * 
+ * @param {*} registrationName 
+ * @param {*} mountAt 
+ */
+function listenTo(registrationName, mountAt) {
+  
+}
+
+/**
+ * 
+ */
+function ensureListeningTo(rootContainerElement, registrationName) {
+  const isDocumentOrFragment = 
+    rootContainerElement.nodeType === 9 ||
+    rootContainerElement.nodeType === 11
+  const doc = isDocumentOrFragment ? rootContainerElement : rootContainerElement.ownerDocument;
+  listenTo(registrationName, doc);
+}
+
+function setInitalProperties(domElement, type, newProps, rootContainerElement) {
   for(const propKey in newProps) {
     if(!newProps.hasOwnProperty(propKey)) {
       continue;
@@ -645,6 +714,10 @@ function setInitalProperties(domElement, type, newProps) {
     const nextProp = newProps[propKey];
     if(propKey === 'style') {
       setValueForStyles(domElement, nextProp);
+    } else if(registrationNameModules.hasOwnProperty(propKey))  {
+      if(nextProp != null) {
+        ensureListeningTo(rootContainerElement, propKey);
+      }
     } else {
 
     }
@@ -665,9 +738,10 @@ function completeWork(current, workInProgress, expirationTime) {
       break;
     }
     case HostComponent: {
+      const rootContainerInstance = getRootHostContainer();
       const instance = createInstance(type, workInProgress, newProps);
       appendAllChildren(instance, workInProgress);
-      initialChildren(instance, type, newProps);
+      initialChildren(instance, type, newProps, rootContainerInstance);
       workInProgress.stateNode = instance;
       break;
     }

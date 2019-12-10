@@ -12,11 +12,17 @@ class Main extends React.Component {
 }
 
 class Child extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = {
+      aha: 'qwe'
+    }
+  }
   componentWillMount() {
     console.log("will Mount");
   }
   render() {
-    return <div>I am child</div>
+  return <div>I am child - {this.state.aha}</div>
   }
   componentDidMount() {
     console.log('did mount');
