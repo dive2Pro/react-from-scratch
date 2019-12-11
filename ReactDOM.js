@@ -1,10 +1,9 @@
 import { createRootFiber } from "./Fiber";
-
+import "./Events";
 
 function getStateNode(fiber) {
   return fiber.current;
 }
-
 
 const ReactDOM = {
   render(rElement, container) {
@@ -18,9 +17,7 @@ const ReactDOM = {
     let fiberRoot;
     if (!root) {
       // 打上该标记
-      root = container._reactContainerRoot = createRootFiber(
-        container
-      );
+      root = container._reactContainerRoot = createRootFiber(container);
       fiberRoot = root._internalRoot;
       //
       root.render(rElement, null);

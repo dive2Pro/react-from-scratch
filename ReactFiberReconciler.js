@@ -11,8 +11,11 @@ import {
   Update,
   PerformedWork
 } from "./Fiber";
+import { registrationNameDependencies } from './events/EventPluginRegistry'
+import {precacheFiberNode} from "./events/ReactDOMEventListener";
 
-const HostComponent = 1;
+
+export const HostComponent = 1;
 const NormalClass = 9;
 const Fragment = 3;
 let isWorking = false;
@@ -59,7 +62,7 @@ function pushHostRootContext(workInProgress ) {
 }
 
 /**
- * 
+ *
  */
 const ReactInstanceMap = {
   set(key, value) {
@@ -610,6 +613,7 @@ function createTextInstance(newText, workInProgress) {
 }
 function createInstance(type, workInProgress, nextProps) {
   const domInstance = document.createElement(type);
+  precacheFiberNode(workInProgress, domInstance);
   return domInstance;
 }
 
@@ -686,20 +690,31 @@ function setValueForStyles(node, styles)  {
 }
 
 /**
- *   监听 document 对象上的冒泡事件
- * 
- * @param {*} registrationName 
- * @param {*} mountAt 
+ *   监听 mountAt 对象上的冒泡事件
+ *
+ * @param {*} registrationName  : onClick, onChange ...
+ * @param {*} mountAt  : doc
  */
 function listenTo(registrationName, mountAt) {
-  
+    const dependencies = registrationNameDependencies[registrationName];
+
+    for(let i = 0 ; i < dependencies.length ; i ++ ) {
+      const dependency = dependencies[i];
+      switch (dependency) {
+        case 'click':
+          trapBubbledEvent(dependency, mountAt);
+          break;
+      }
+    }
 }
 
 /**
- * 
+ *  这里是 React 和 Vue 等其他框架不同的地方
+ *  React 会把所有的事件的挂载节点都设置为 Document. 这样只需要处理这一个 节点的事件,
+ *  在内部将浏览器之间的事件处理差异抹平, 代价是需要在框架内部针对所有的浏览器事件都作出相应的处理方案
  */
 function ensureListeningTo(rootContainerElement, registrationName) {
-  const isDocumentOrFragment = 
+  const isDocumentOrFragment =
     rootContainerElement.nodeType === 9 ||
     rootContainerElement.nodeType === 11
   const doc = isDocumentOrFragment ? rootContainerElement : rootContainerElement.ownerDocument;
@@ -716,7 +731,7 @@ function setInitalProperties(domElement, type, newProps, rootContainerElement) {
       setValueForStyles(domElement, nextProp);
     } else if(registrationNameModules.hasOwnProperty(propKey))  {
       if(nextProp != null) {
-        ensureListeningTo(rootContainerElement, propKey);
+        // ensureListeningTo(rootContainerElement, propKey);
       }
     } else {
 
