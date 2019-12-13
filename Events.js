@@ -12,40 +12,94 @@
  *  但另一方面事件本身的传递(冒泡, Capture) 方式就需要进行手动模拟(Synthetic)
  *
  */
-import {injection, plugins} from './events/EventPluginRegistry'
-import SimpleEventPlugin  from "./events/SimpleEventPlugin";
+import { injection, plugins } from "./events/EventPluginRegistry";
+import SimpleEventPlugin, { accumulateInto } from "./events/SimpleEventPlugin";
+import {getFiberCurrentPropsFromNode} from "./events/ReactDOMEventListener";
 
-function extractEvents(topLevelType, targetInst, nativeEvent ,nativeEventTarget) {
-    let events = null;
-    for(let i = 0; i < plugins.length ; i ++ ) {
-        const possiblePlugin = plugins[i];
-        if(possiblePlugin) {
-            const extractedEvents = possiblePlugin.extractEvents(
-                topLevelType,
-                targetInst,
-                nativeEvent,
-                nativeEventTarget
-            )
-            if(extractedEvents) {
-                events = accumulateInto(events, extractedEvents);
-            }
-        }
-    }
-
-    return events;
-}
-
-export function  runExtractedEventsInBatch (topLevelType, targetInst, nativeEvent, nativeEventTarget) {
-    const events = extractEvents(
+function extractEvents(
+  topLevelType,
+  targetInst,
+  nativeEvent,
+  nativeEventTarget
+) {
+  let events = null;
+  for (let i = 0; i < plugins.length; i++) {
+    const possiblePlugin = plugins[i];
+    if (possiblePlugin) {
+      const extractedEvents = possiblePlugin.extractEvents(
         topLevelType,
         targetInst,
         nativeEvent,
         nativeEventTarget
-    )
-    runEventsInBatch(events, false);
+      );
+      if (extractedEvents) {
+        events = accumulateInto(events, extractedEvents);
+      }
+    }
+  }
+
+  return events;
 }
 
-injection.injectEventPluginsByName([
-    SimpleEventPlugin
-]);
+function isInteractive(tag) {
+  return (
+    tag === "button" ||
+    tag === "input" ||
+    tag === "select" ||
+    tag === "textarea"
+  );
+}
+/**
+ * 检查是否 出于 禁止  状态
+ *
+ * @param name
+ * @param type
+ * @param props
+ */
+function shouldPreventMouseEvent(name, type, props) {
+  switch (name) {
+    case "onClick":
+      return !!(props.disabled && isInteractive(type));
+    default:
+      return false;
+  }
+}
 
+export function getListener(inst, registrationName) {
+  let listener;
+  const stateNode = inst.stateNode;
+  if (!stateNode) {
+    return null;
+  }
+  const props = getFiberCurrentPropsFromNode(stateNode);
+  if (!props) {
+    return null;
+  }
+
+  if (shouldPreventMouseEvent(registrationName, inst.isPrototypeOf, props)) {
+    return null;
+  }
+
+  listener = props[registrationName];
+
+  return listener;
+}
+
+function runEventsInBatch(event, isSimulate) {}
+
+export function runExtractedEventsInBatch(
+  topLevelType,
+  targetInst,
+  nativeEvent,
+  nativeEventTarget
+) {
+  const events = extractEvents(
+    topLevelType,
+    targetInst,
+    nativeEvent,
+    nativeEventTarget
+  );
+  runEventsInBatch(events, false);
+}
+
+injection.injectEventPluginsByName([SimpleEventPlugin]);

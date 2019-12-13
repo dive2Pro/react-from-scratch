@@ -12,7 +12,7 @@ import {
   PerformedWork
 } from "./Fiber";
 import { registrationNameDependencies } from './events/EventPluginRegistry'
-import {precacheFiberNode} from "./events/ReactDOMEventListener";
+import {precacheFiberNode, updateFiberProps} from "./events/ReactDOMEventListener";
 
 
 export const HostComponent = 1;
@@ -37,7 +37,7 @@ export const REACT_ELEMENT_TYPE = 0x001;
 
 const rootInstanceStackCursor = {
   current: {}
-}
+};
 
 function push(cursor, value, fiber) {
   cursor.current = value;
@@ -614,6 +614,7 @@ function createTextInstance(newText, workInProgress) {
 function createInstance(type, workInProgress, nextProps) {
   const domInstance = document.createElement(type);
   precacheFiberNode(workInProgress, domInstance);
+  updateFiberProps(domInstance, nextProps);
   return domInstance;
 }
 
@@ -1024,7 +1025,7 @@ function commitAllHostEffects() {
         break;
       }
       case Update: {
-        console.log(nextEffect)
+        console.log(nextEffect);
         break;
       }
       default:

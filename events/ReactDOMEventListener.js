@@ -1,5 +1,9 @@
 import {HostText} from "../Fiber";
 import {HostComponent} from "../ReactFiberReconciler";
+import {runExtractedEventsInBatch} from "../Events";
+
+const internalInstanceKey = ' __reactInternalInstance$ 1';
+const internalEventHandlersKey = ' __reactEventHandlers$ 2';
 
 function addEventBubbleListener(element, eventType, listener) {
     element.addEventListener(eventType, listener, false);
@@ -91,9 +95,22 @@ function getTopLevelCallbackBookKeeping(topLevelType, targetInst, nativeEvent) {
 
 }
 
-const internalInstanceKey = ' __reactInternalInstance$ 1';
 export function precacheFiberNode(hostInst, node) {
     node[internalInstanceKey] = hostInst;
+}
+
+export function getFiberCurrentPropsFromNode(node) {
+    return node[internalEventHandlersKey] || null;
+}
+
+/**
+ *  在 domElement 上开辟特定字段来保存 props
+ *
+ * @param node
+ * @param props
+ */
+export function updateFiberProps(node, props) {
+    node[internalEventHandlersKey] = props;
 }
 
 function getClosestInstanceFromNode(node) {
