@@ -126,7 +126,7 @@ function executeDispatchesInOrder(event, simulated) {
     executeDispatch(event, simulated, dispatchListeners, dispatchInstances)
   }
   event._dispatchListeners = null;
-  event._dispatchInstance = null;
+  event._dispatchInstances = null;
 }
 
 function executeDispatchedAndRelease(event, simulated) {

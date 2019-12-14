@@ -7,7 +7,6 @@ import React from "./React";
 
 class Main extends React.Component {
   onClick = event => {
-    console.log(event);
     event.stopPropagation();
     event.persist();
     console.log(event)

@@ -699,6 +699,19 @@ function setValueForStyles(node, styles) {
   }
 }
 
+const topListenersIDKey = ' _reactListenersID -';
+const alreadyListeningTo = {};
+let reactTopListenersCounter = 0;
+
+function getListeningForDocument(mountAt) {
+  if(!Object.hasOwnProperty.call(mountAt, topListenersIDKey)) {
+    mountAt[topListenersIDKey] = reactTopListenersCounter++;
+    alreadyListeningTo[mountAt[topListenersIDKey]] = {};
+  }
+
+  return alreadyListeningTo[mountAt[topListenersIDKey]];
+}
+
 /**
  *   监听 mountAt 对象上的冒泡事件
  *
@@ -706,15 +719,20 @@ function setValueForStyles(node, styles) {
  * @param {*} mountAt  : doc
  */
 function listenTo(registrationName, mountAt) {
+  const isListening = getListeningForDocument(mountAt);
   const dependencies = registrationNameDependencies[registrationName];
 
   for (let i = 0; i < dependencies.length; i++) {
     const dependency = dependencies[i];
+    if(isListening[dependency]) {
+      return;
+    }
     switch (dependency) {
       case "click":
         trapBubbledEvent(dependency, mountAt);
         break;
     }
+    isListening[dependency] = true;
   }
 }
 
