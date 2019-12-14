@@ -6,8 +6,18 @@ import React from "./React";
 // }), document.body)
 
 class Main extends React.Component {
+  onClick = event => {
+    console.log(event);
+    event.stopPropagation();
+    event.persist();
+    console.log(event)
+  };
   render() {
-    return <div style={{color: 'red'}}>Coco</div>;
+    return (
+      <div onClick={this.onClick} style={{ color: "red" }}>
+        Coco
+      </div>
+    );
   }
 }
 
@@ -15,25 +25,29 @@ class Child extends React.Component {
   constructor(props) {
     super(props);
     this.state = {
-      aha: 'qwe'
-    }
+      aha: "qwe"
+    };
   }
   componentWillMount() {
-    console.log("will Mount");
   }
   render() {
-  return <div>I am child - {this.state.aha}</div>
+    return <div>I am child - {this.state.aha}</div>;
   }
   componentDidMount() {
-    console.log('did mount');
+    console.log("did mount");
   }
 }
 
 class App extends React.Component {
+
+  onClick = evtInApp => {
+    console.log(evtInApp, " ------ ------ ");
+  };
+
   render() {
     return [
-      <div>
-        Hello World! <Main />{" "}
+      <div onClick={this.onClick}>
+        Hello World! <Main />
       </div>,
       <Child />
     ];

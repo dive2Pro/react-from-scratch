@@ -11,9 +11,15 @@ import {
   Update,
   PerformedWork
 } from "./Fiber";
-import { registrationNameDependencies } from './events/EventPluginRegistry'
-import {precacheFiberNode, updateFiberProps} from "./events/ReactDOMEventListener";
-
+import {
+  registrationNameDependencies,
+  registrationNameModules
+} from "./events/EventPluginRegistry";
+import {
+  precacheFiberNode,
+  trapBubbledEvent,
+  updateFiberProps
+} from "./events/ReactDOMEventListener";
 
 export const HostComponent = 1;
 const NormalClass = 9;
@@ -32,6 +38,8 @@ let nextUnitOfWork = null;
 let nextFlushedRoot = null;
 let nextFlushedexpirationTime = NoWork;
 let nextEffect = null;
+
+let isBatchingUpdates = false;
 
 export const REACT_ELEMENT_TYPE = 0x001;
 
@@ -57,7 +65,7 @@ function pushHostContainer(fiber, nextRootInstance) {
   push(rootInstanceStackCursor, nextRootInstance, fiber);
 }
 
-function pushHostRootContext(workInProgress ) {
+function pushHostRootContext(workInProgress) {
   pushHostContainer(workInProgress, workInProgress.stateNode.containerInfo);
 }
 
@@ -71,18 +79,14 @@ const ReactInstanceMap = {
   get(key) {
     return key._reactInternalInstance;
   }
-}
+};
 
 const UpdateState = 0;
 
-function commitWork() {
-
-}
+function commitWork() {}
 
 const classComponentUpdater = {
-  enqueueUpdater(inst, payload, callback) {
-
-  }
+  enqueueUpdater(inst, payload, callback) {}
 };
 
 function adoptClassInstance(workInProgress, instance) {
@@ -90,7 +94,6 @@ function adoptClassInstance(workInProgress, instance) {
   workInProgress.stateNode = instance;
 
   ReactInstanceMap.set(instance, workInProgress);
-
 }
 
 function constructClassInstance(
@@ -111,8 +114,8 @@ function constructClassInstance(
 }
 
 function callComponentWillMount(workInProgress, instance) {
-  if(typeof instance.componentWillMount === 'function') {
-      instance.componentWillMount();
+  if (typeof instance.componentWillMount === "function") {
+    instance.componentWillMount();
   }
 }
 
@@ -130,7 +133,7 @@ function mountClassInstance(
   if (typeof instance.componentWillMount === "function") {
     callComponentWillMount(workInProgress, instance);
   }
-  if(typeof instance.componentDidMount === 'function') {
+  if (typeof instance.componentDidMount === "function") {
     workInProgress.effectTag |= Update;
   }
 }
@@ -288,7 +291,7 @@ function shouldConstruct(Component) {
   );
 }
 function createFiberFromFragment(elements, mode, expirationTime) {
-  const fiber = createFiber(Fragment, elements )
+  const fiber = createFiber(Fragment, elements);
   fiber.expirationTime = expirationTime;
   return fiber;
 }
@@ -354,14 +357,22 @@ function createChild(returnFiber, newChild, expirationTime) {
   if (typeof newChild === "object" && newChild !== null) {
     switch (newChild.$$typeof) {
       case REACT_ELEMENT_TYPE: {
-        const created =  createFiberFromElement(newChild, returnFiber.mode, expirationTime);
-        created.return = returnFiber
+        const created = createFiberFromElement(
+          newChild,
+          returnFiber.mode,
+          expirationTime
+        );
+        created.return = returnFiber;
         return created;
       }
     }
 
     if (Array.isArray(newChild)) {
-      const created =  createFiberFromFragment(newChild, returnFiber.mode, expirationTime);
+      const created = createFiberFromFragment(
+        newChild,
+        returnFiber.mode,
+        expirationTime
+      );
       createChild.return = returnFiber;
       return created;
     }
@@ -481,7 +492,6 @@ function reconcileChildren(
 }
 
 function updateHostRoot(current, workInProgress, nextRenderexpirationTime) {
-
   pushHostRootContext(workInProgress);
 
   const updateQueue = workInProgress.updateQueue;
@@ -662,31 +672,30 @@ function initialChildren(domElement, type, newProps, rootContainerInstance) {
 }
 
 function dangerousStyleValue(name, value) {
-  const isEmpty = value == null || typeof value === 'boolean' || value === '';
-  if(isEmpty) {
-    return ''
+  const isEmpty = value == null || typeof value === "boolean" || value === "";
+  if (isEmpty) {
+    return "";
   }
 
-  if(typeof value === 'number' && value !== 0) {
-    return value + 'px';
+  if (typeof value === "number" && value !== 0) {
+    return value + "px";
   }
   return ("" + value).trim();
 }
 
-function setValueForStyles(node, styles)  {
+function setValueForStyles(node, styles) {
   const style = node.style;
-  for(let styleName in styles) {
-    if(!styles.hasOwnProperty(styleName)) {
+  for (let styleName in styles) {
+    if (!styles.hasOwnProperty(styleName)) {
       continue;
     }
     const styleValue = dangerousStyleValue(styleName, styles[styleName]);
 
-    if(styleName === 'float') {
-      styleName =  'cssFloat';
+    if (styleName === "float") {
+      styleName = "cssFloat";
     }
 
     style[styleName] = styleValue;
-
   }
 }
 
@@ -697,16 +706,16 @@ function setValueForStyles(node, styles)  {
  * @param {*} mountAt  : doc
  */
 function listenTo(registrationName, mountAt) {
-    const dependencies = registrationNameDependencies[registrationName];
+  const dependencies = registrationNameDependencies[registrationName];
 
-    for(let i = 0 ; i < dependencies.length ; i ++ ) {
-      const dependency = dependencies[i];
-      switch (dependency) {
-        case 'click':
-          trapBubbledEvent(dependency, mountAt);
-          break;
-      }
+  for (let i = 0; i < dependencies.length; i++) {
+    const dependency = dependencies[i];
+    switch (dependency) {
+      case "click":
+        trapBubbledEvent(dependency, mountAt);
+        break;
     }
+  }
 }
 
 /**
@@ -716,26 +725,26 @@ function listenTo(registrationName, mountAt) {
  */
 function ensureListeningTo(rootContainerElement, registrationName) {
   const isDocumentOrFragment =
-    rootContainerElement.nodeType === 9 ||
-    rootContainerElement.nodeType === 11
-  const doc = isDocumentOrFragment ? rootContainerElement : rootContainerElement.ownerDocument;
+    rootContainerElement.nodeType === 9 || rootContainerElement.nodeType === 11;
+  const doc = isDocumentOrFragment
+    ? rootContainerElement
+    : rootContainerElement.ownerDocument;
   listenTo(registrationName, doc);
 }
 
 function setInitalProperties(domElement, type, newProps, rootContainerElement) {
-  for(const propKey in newProps) {
-    if(!newProps.hasOwnProperty(propKey)) {
+  for (const propKey in newProps) {
+    if (!newProps.hasOwnProperty(propKey)) {
       continue;
     }
     const nextProp = newProps[propKey];
-    if(propKey === 'style') {
+    if (propKey === "style") {
       setValueForStyles(domElement, nextProp);
-    } else if(registrationNameModules.hasOwnProperty(propKey))  {
-      if(nextProp != null) {
-        // ensureListeningTo(rootContainerElement, propKey);
+    } else if (registrationNameModules.hasOwnProperty(propKey)) {
+      if (nextProp != null) {
+        ensureListeningTo(rootContainerElement, propKey);
       }
     } else {
-
     }
   }
 }
@@ -1036,11 +1045,11 @@ function commitAllHostEffects() {
 }
 
 function commitLifeCycles(finishedRoot, current, finishedWork) {
-  switch(finishedWork.tag) {
+  switch (finishedWork.tag) {
     case ClassComponent: {
       const instance = finishedWork.stateNode;
-      if(finishedWork.effectTag & Update) {
-        if(current === null) {
+      if (finishedWork.effectTag & Update) {
+        if (current === null) {
           instance.props = instance.memoizedProps;
           instance.state = instance.memoizedState;
           instance.componentDidMount();
@@ -1054,7 +1063,7 @@ function commitLifeCycles(finishedRoot, current, finishedWork) {
     }
     case HostComponent: {
       const instance = finishedWork.stateNode;
-      if(current === null && finishedWork.effectTag & Update) {
+      if (current === null && finishedWork.effectTag & Update) {
         const type = finishedWork.type;
         const props = finishedWork.memoizedProps;
         commitMount(instance, type, props, finishedWork);
@@ -1065,22 +1074,16 @@ function commitLifeCycles(finishedRoot, current, finishedWork) {
 }
 
 function commitAllLifeCycle(finishedRoot) {
-  while(nextEffect !== null) {
-
-    if(nextEffect.effectTag & (Update)) {
+  while (nextEffect !== null) {
+    if (nextEffect.effectTag & Update) {
       const current = nextEffect.alternate;
-      commitLifeCycles(
-        finishedRoot,
-        current,
-        nextEffect
-      )
+      commitLifeCycles(finishedRoot, current, nextEffect);
     }
     const next = nextEffect.nextEffect;
     nextEffect.nextEffect = null;
     nextEffect = next;
   }
 }
-
 
 function completeRoot(root, finishedWork, expirationTime) {
   isWorking = true;
@@ -1103,17 +1106,17 @@ function completeRoot(root, finishedWork, expirationTime) {
   }
 
   nextEffect = firstEffect;
-  while(nextEffect !== null) {
+  while (nextEffect !== null) {
     try {
-      commitAllLifeCycle(root)
-    } catch(e) {
-      console.error(e)
+      commitAllLifeCycle(root);
+    } catch (e) {
+      console.error(e);
       return;
     }
   }
 
   isCommitting = false;
-  isWorking =false;
+  isWorking = false;
 
   commitWork(root, finishedWork);
   onCommit(root);
@@ -1310,4 +1313,23 @@ function updateContainer(elements, container, parentComponent, callback) {
   );
 }
 
-export { requestWork, updateContainer };
+/**
+ * 如果
+ * @param fn
+ * @param a
+ * @returns {*}
+ */
+function batchedUpdates(fn, a) {
+  const previousIsBatchingUpdates = isBatchingUpdates;
+  isBatchingUpdates = true;
+  try {
+    return fn(a);
+  } finally {
+    isBatchingUpdates = previousIsBatchingUpdates;
+    if (!isBatchingUpdates && !isRendering) {
+      // performSyncWork();
+    }
+  }
+}
+
+export { requestWork, updateContainer, batchedUpdates };

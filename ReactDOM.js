@@ -1,5 +1,7 @@
 import { createRootFiber } from "./Fiber";
 import "./Events";
+import { setBatchingImplementation } from "./events/ReactGenericBatching";
+import { batchedUpdates } from "./ReactFiberReconciler";
 
 function getStateNode(fiber) {
   return fiber.current;
@@ -27,4 +29,6 @@ const ReactDOM = {
     return getStateNode(fiberRoot);
   }
 };
+
+setBatchingImplementation(batchedUpdates);
 export default ReactDOM;

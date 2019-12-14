@@ -2,7 +2,9 @@
  *
  */
 
-import {SyntheticMouseEvent} from "./SyntheticEvent";
+import { SyntheticMouseEvent } from "./SyntheticEvent";
+import { HostComponent } from "../ReactFiberReconciler";
+import {getListener} from "../Events";
 
 const eventTypes = {};
 
@@ -12,15 +14,15 @@ const topLevelEventsTypeToDispatchConfig = {};
  * 事件可以分为两类
  *
  */
-const interactiveEventTypeNames = ["click", "click"];
+const interactiveEventTypeNames = [["click", "click"]];
 
-const nonInteractiveEventTypeNames = ["drag", "drag"];
+const nonInteractiveEventTypeNames = [["drag", "drag"]];
 
 function addEventTypeNameToConfig([topEvent, event], isInteractive) {
   const capitalizedEvent = event[0].toUpperCase() + event.slice(1);
   const onEvent = "on" + capitalizedEvent;
   const type = {
-    phrasedRegistrationNames: {
+    phasedRegistrationNames: {
       bubbled: onEvent,
       captured: onEvent + "Capture"
     },
@@ -36,10 +38,10 @@ interactiveEventTypeNames.forEach(eventTuple => {
   addEventTypeNameToConfig(eventTuple, true);
 });
 
-function forEachAccumulated(array, fn, scope) {
-  if(Array.isArray(array)) {
-    array.forEach(fn)
-  } else if(array) {
+export function forEachAccumulated(array, fn, scope) {
+  if (Array.isArray(array)) {
+    array.forEach(fn);
+  } else if (array) {
     fn.call(scope, array);
   }
 }
@@ -55,11 +57,11 @@ function forEachAccumulated(array, fn, scope) {
  * @returns {*[]|*}
  */
 export function accumulateInto(current, next) {
-  if(current === null) {
+  if (current == null) {
     return next;
   }
-  if(Array.isArray(current)) {
-    if(Array.isArray(next)) {
+  if (Array.isArray(current)) {
+    if (Array.isArray(next)) {
       current.push.apply(current, next);
       return current;
     }
@@ -76,29 +78,54 @@ export function accumulateInto(current, next) {
 
 function listenerAtPhase(inst, event, phase) {
   const registrationName = event.dispatchConfig.phasedRegistrationNames[phase];
-  return getListener(registrationName);
+  return getListener(inst, registrationName);
 }
 
 function accumulateDirectionalDispatches(inst, phase, event) {
-  const listener = listenerAtPhase(inst, event,  phase);
+  const listener = listenerAtPhase(inst, event, phase);
   if (listener) {
     event._dispatchListeners = accumulateInto(
-        event._dispatchListeners,
-        listener
+      event._dispatchListeners,
+      listener
     );
-    event._dispatchInstances = accumulateInto(
-        event._dispatchInstances,
-        inst
-    )
+    event._dispatchInstances = accumulateInto(event._dispatchInstances, inst);
+  }
+}
+
+/**
+ * 找到父级的 HostComponent, 因为都是作用在这个类型上的回调链
+ * @param inst
+ * @returns {*|null}
+ */
+function getParent(inst) {
+  do {
+    inst = inst.return;
+  } while (inst && inst.tag !== HostComponent);
+  return inst || null;
+}
+
+function traverseTwoPhase(inst, fn, arg) {
+  const path = [];
+  while (inst) {
+    path.push(inst);
+    inst = getParent(inst);
+  }
+
+  let i;
+
+  for (i = path.length; i-- > 0; ) {
+    fn(path[i], "captured", arg);
+  }
+
+  for (i = 0; i< path.length ; i ++) {
+    fn(path[i], "bubbled", arg);
   }
 }
 
 function accumulateTwoPhaseDispatchesSingle(event) {
-
   if (event && event.dispatchConfig.phasedRegistrationNames) {
     traverseTwoPhase(event._targetInst, accumulateDirectionalDispatches, event);
   }
-
 }
 
 function accumulateTwoPhaseDispatches(events) {

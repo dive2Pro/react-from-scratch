@@ -13,8 +13,8 @@
  *
  */
 import { injection, plugins } from "./events/EventPluginRegistry";
-import SimpleEventPlugin, { accumulateInto } from "./events/SimpleEventPlugin";
-import {getFiberCurrentPropsFromNode} from "./events/ReactDOMEventListener";
+import SimpleEventPlugin, {accumulateInto, forEachAccumulated} from "./events/SimpleEventPlugin";
+import {getFiberCurrentPropsFromNode, getNodeFromInstance} from "./events/ReactDOMEventListener";
 
 function extractEvents(
   topLevelType,
@@ -85,7 +85,85 @@ export function getListener(inst, registrationName) {
   return listener;
 }
 
-function runEventsInBatch(event, isSimulate) {}
+
+// TODO: error handler
+function invokeGuardCallbackAndCatchFirstError(name, func, context) {
+  const funcArgs = Array.prototype.slice.call(arguments, 3);
+  try {
+    func.apply(context, funcArgs);
+  } catch(error) {
+    this.onError(error);
+  }
+}
+
+function executeDispatch(event, simulated, listener, inst) {
+  const type = event.type || 'unknown-event';
+  event.currentTarget = getNodeFromInstance(inst);
+  invokeGuardCallbackAndCatchFirstError(type, listener, undefined, event);
+  event.currentTarget = null;
+
+}
+
+function executeDispatchesInOrder(event, simulated) {
+  /** 如果记得的话, 这两个是同时用同种方式插入的集合 */
+  const dispatchListeners = event._dispatchListeners;
+  const dispatchInstances = event._dispatchInstances;
+
+  if (Array.isArray(dispatchListeners)) {
+    for (let i = 0; i < dispatchListeners.length ; i ++) {
+      if(event.isPropagationStopped()) {
+        break;
+      }
+
+      executeDispatch(
+          event,
+          simulated,
+          dispatchListeners[i],
+          dispatchInstances[i]
+      )
+    }
+  } else {
+    executeDispatch(event, simulated, dispatchListeners, dispatchInstances)
+  }
+  event._dispatchListeners = null;
+  event._dispatchInstance = null;
+}
+
+function executeDispatchedAndRelease(event, simulated) {
+  if (event) {
+    executeDispatchesInOrder(event,  simulated);
+    if (!event.isPersistent()) {
+      event.constructor.release(event);
+    }
+  }
+}
+
+function executeDispatchesAndReleaseTopLevel(event) {
+  return executeDispatchedAndRelease(event,  false);
+}
+
+let eventQueue = [];
+
+function runEventsInBatch(events, isSimulate) {
+  if (events !== null) {
+    eventQueue = accumulateInto(eventQueue, events);
+  }
+
+  const processingEventQueue = eventQueue;
+  eventQueue = null;
+  if (!processingEventQueue) {
+    return;
+  }
+
+  if (isSimulate) {
+
+  } else {
+    forEachAccumulated(
+        processingEventQueue,
+        executeDispatchesAndReleaseTopLevel
+    )
+  }
+}
 
 export function runExtractedEventsInBatch(
   topLevelType,
@@ -102,4 +180,4 @@ export function runExtractedEventsInBatch(
   runEventsInBatch(events, false);
 }
 
-injection.injectEventPluginsByName([SimpleEventPlugin]);
+injection.injectEventPluginsByName({ SimpleEventPlugin });

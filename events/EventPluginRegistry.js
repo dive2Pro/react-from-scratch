@@ -15,73 +15,70 @@
  *
  */
 export const namesToPlugins = {};
-export const plugins = {};
+export const plugins = [];
 export const eventNameDispatchConfigs = {};
 export const registrationNameModules = {};
 export const registrationNameDependencies = {};
 
 function publishRegistrationName(registrationName, pluginModule, eventName) {
-        registrationNameModules[registrationName] = pluginModule;
-        registrationNameDependencies[registrationName] = pluginModule.eventTypes[eventName].dependencies;
+  registrationNameModules[registrationName] = pluginModule;
+  registrationNameDependencies[registrationName] =
+    pluginModule.eventTypes[eventName].dependencies;
 }
 
 function publishEventForPlugin(dispatchConfig, pluginModule, eventName) {
-    eventNameDispatchConfigs[eventName] = dispatchConfig;
-    const phasedRegistrationNames = dispatchConfig.phasedRegistrationNames;
-    if(phasedRegistrationNames) {
-        for ( const phraseName in phasedRegistrationNames) {
-            const phrasedRegistrationName = phasedRegistrationNames[phraseName];
-            publishRegistrationName(
-                phrasedRegistrationName,
-                pluginModule,
-                eventName
-            )
-        }
-    } else if(dispatchConfig.registrationName) {
-        publishRegistrationName(
-            dispatchConfig.registrationName,
-            pluginModule,
-            eventName
-        )
+  eventNameDispatchConfigs[eventName] = dispatchConfig;
+  const phasedRegistrationNames = dispatchConfig.phasedRegistrationNames;
+  if (phasedRegistrationNames) {
+    for (const phraseName in phasedRegistrationNames) {
+      const phrasedRegistrationName = phasedRegistrationNames[phraseName];
+      publishRegistrationName(phrasedRegistrationName, pluginModule, eventName);
     }
+  } else if (dispatchConfig.registrationName) {
+    publishRegistrationName(
+      dispatchConfig.registrationName,
+      pluginModule,
+      eventName
+    );
+  }
 }
 
 function recomputePluginOrdering() {
-    namesToPlugins.forEach((pluginName, index) => {
-        const pluginModule = namesToPlugins[pluginName];
-        plugins[index] = pluginModule;
-
+  for (const pluginName in namesToPlugins) {
+    Object.entries(namesToPlugins).forEach(
+      ([pluginName, pluginModule], index) => {
         const publishedEvents = pluginModule.eventTypes;
-
-        for(const eventName in publishedEvents) {
-            publishEventForPlugin(
-                publishedEvents[eventName],
-                pluginModule,
-                eventName
-            )
+        plugins[index] = pluginModule;
+        for (const eventName in publishedEvents) {
+          publishEventForPlugin(
+            publishedEvents[eventName],
+            pluginModule,
+            eventName
+          );
         }
-    })
+      }
+    );
+  }
 }
 
 function injectEventPluginsByName(injectedNamesToPlugins) {
-    for(const pluginName in injectedNamesToPlugins) {
-        if(!injectedNamesToPlugins.hasOwnProperty(pluginName)) {
-            continue;
-        }
-        const pluginModule = injectedNamesToPlugins[pluginName];
-        if(!namesToPlugins[pluginName] || namesToPlugins[pluginName] !== pluginModule) {
-            namesToPlugins[pluginName] = pluginModule;
-        }
+  for (const pluginName in injectedNamesToPlugins) {
+    if (!injectedNamesToPlugins.hasOwnProperty(pluginName)) {
+      continue;
     }
-    recomputePluginOrdering();
+    const pluginModule = injectedNamesToPlugins[pluginName];
+    if (
+      !namesToPlugins[pluginName] ||
+      namesToPlugins[pluginName] !== pluginModule
+    ) {
+      namesToPlugins[pluginName] = pluginModule;
+    }
+  }
+  recomputePluginOrdering();
 }
 
-
-
 const injection = {
-    injectEventPluginsByName
+  injectEventPluginsByName
 };
 
-export { injection }
-
-
+export { injection };
