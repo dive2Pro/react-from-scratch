@@ -39,15 +39,22 @@ class Child extends React.Component {
 
 class App extends React.Component {
 
+  state = {
+    text: 1
+  }
+
   onClick = evtInApp => {
     console.log(evtInApp, " ------ ------ ");
     evtInApp.stopPropagation();
+    this.setState({
+      text: 2
+    });
   };
 
   render() {
     return [
       <div onClickCapture={this.onClick}>
-        Hello World! <Main />
+        Hello World! <Main /> {this.state.text}
       </div>,
       <Child />
     ];

@@ -20,6 +20,7 @@ import {
   trapBubbledEvent,
   updateFiberProps
 } from "./events/ReactDOMEventListener";
+import React from "./React";
 
 export const HostComponent = 1;
 const NormalClass = 9;
@@ -86,13 +87,18 @@ const UpdateState = 0;
 function commitWork() {}
 
 const classComponentUpdater = {
-  enqueueUpdater(inst, payload, callback) {}
+  enqueueSetState(inst, payload, callback, callerName) {
+    const fiber = ReactInstanceMap.get(inst);
+    const update = createUpdate();
+    update.payload = payload;
+    enqueueUpdater(fiber, update);
+    scheduleWork(fiber);
+  }
 };
 
 function adoptClassInstance(workInProgress, instance) {
   instance.updater = classComponentUpdater;
   workInProgress.stateNode = instance;
-
   ReactInstanceMap.set(instance, workInProgress);
 }
 
@@ -165,6 +171,62 @@ function finishClassComponent(
   return workInProgress.child;
 }
 
+function checkShouldComponentUpdate(
+  workInProgress,
+  ctor,
+  oldProps,
+  nextProps,
+  oldState,
+  newState
+) {
+  const instance = workInProgress.stateNode;
+  if (typeof instance.shouldComponentUpdate === "function") {
+    const shouldUpdate = instance.shouldComponentUpdate(nextProps, newState);
+    return shouldUpdate;
+  }
+  return true;
+}
+
+function updateClassInstance(
+  current,
+  workInProgress,
+  ctor,
+  nextProps,
+  nextRenderExpirationTime
+) {
+  const instance = workInProgress.stateNode;
+  const oldState = workInProgress.memoizedState;
+  const oldProps = workInProgress.memoizedProps;
+  let newState = (instance.state = oldState);
+  let updateQueue = workInProgress.updateQueue;
+  if (updateQueue !== null) {
+    processUpdateQueue(
+      workInProgress,
+      updateQueue,
+      nextProps,
+      instance,
+      nextRenderexpirationTime
+    );
+    newState = workInProgress.memoizedState;
+  }
+
+  const shouldUpdate = checkShouldComponentUpdate(
+    workInProgress,
+    ctor,
+    oldProps,
+    nextProps,
+    oldState,
+    newState
+  );
+
+  if (shouldUpdate) {
+  }
+
+  instance.props = nextProps;
+  instance.state = newState;
+  return shouldUpdate;
+}
+
 function updateClassComponent(
   current,
   workInProgress,
@@ -189,6 +251,14 @@ function updateClassComponent(
       );
       shouldUpdate = true;
     }
+  } else {
+    shouldUpdate = updateClassInstance(
+      current,
+      workInProgress,
+      Component,
+      nextProps,
+      nextRenderexpirationTime
+    );
   }
 
   return finishClassComponent(
@@ -249,7 +319,7 @@ function processUpdateQueue(
 ) {
   queue = ensureworkInProcessQueueIsAClone(workInProgress, queue);
   let newBaseState = queue.baseState;
-  let resultState;
+  let resultState = newBaseState;
   let newExpirationWork = NoWork;
   let newFirstUpdate = null;
 
@@ -383,24 +453,50 @@ function createChild(returnFiber, newChild, expirationTime) {
 function reconcileArrayChildren(
   returnFiber,
   currentFirstChild,
-  newChild,
+  newChildren,
   expirationTime
 ) {
   let resultingFirstFiber = null;
   let newIndex = 0;
   let oldFiber = currentFirstChild;
   let previousFiber = null;
+  let lastPlacedIndex = 0;
+
+  function placeChild(newFiber, lastPlacedIndex, newIndex) {
+    newFiber.index = newIndex;
+    if (!newChildren) {
+      return lastPlacedIndex;
+    }
+
+    const current = newFiber.alternate;
+
+    if (current !== null) {
+      const oldIndex = current.index;
+      if (oldIndex < lastPlacedIndex) {
+        newFiber.effectTag = Placement;
+        return lastPlacedIndex;
+      } else {
+        return oldIndex;
+      }
+    } else {
+      newFiber.effectTag = Placement;
+      return lastPlacedIndex;
+    }
+  }
+
+  for (; oldFiber !== null && newIndex < newChildren.length; newIndex++) {}
 
   if (oldFiber === null) {
-    for (; newIndex < newChild.length; newIndex++) {
+    for (; newIndex < newChildren.length; newIndex++) {
       const newFiber = createChild(
         returnFiber,
-        newChild[newIndex],
+        newChildren[newIndex],
         expirationTime
       );
       if (newFiber === null) {
         continue;
       }
+      lastPlacedIndex = placeChild(newFiber, lastPlacedIndex, newIndex);
       if (resultingFirstFiber === null) {
         resultingFirstFiber = newFiber;
       } else if (previousFiber !== null) {
@@ -410,6 +506,7 @@ function reconcileArrayChildren(
     }
 
     return resultingFirstFiber;
+  } else {
   }
 }
 
@@ -491,6 +588,41 @@ function reconcileChildren(
   }
 }
 
+function cloneChildFibers(current, workInProgress) {
+  if (workInProgress.child === null) {
+    return;
+  }
+
+  let currentChild = workInProgress.child;
+
+  let newChild = createworkInProcess(
+    currentChild,
+    currentChild.pendingProps,
+    currentChild.expirationTime
+  );
+
+  workInProgress.child = newChild;
+
+  newChild.return = workInProgress;
+
+  while (currentChild.sibling !== null) {
+    currentChild = currentChild.sibling;
+    newChild = newChild.sibling = createworkInProcess(
+      currentChild,
+      currentChild.pendingProps,
+      currentChild.expirationTime
+    );
+    newChild.return = workInProgress;
+  }
+  newChild.sibling = null;
+}
+
+function bailoutOnAlreadyFinishedWork(current, workInProgress) {
+  // 当前的 fiber 没有任务, 但是它的子孙有任务, 克隆子孙并继续
+  cloneChildFibers(current, workInProgress);
+  return workInProgress.child;
+}
+
 function updateHostRoot(current, workInProgress, nextRenderexpirationTime) {
   pushHostRootContext(workInProgress);
 
@@ -511,9 +643,15 @@ function updateHostRoot(current, workInProgress, nextRenderexpirationTime) {
   const nextChildren = nextState.element;
 
   if (prevChildren === nextChildren) {
-    // 初次 null === element 必是 false
+    // 更新时, 走这里
+    return bailoutOnAlreadyFinishedWork(
+      current,
+      workInProgress,
+      nextRenderexpirationTime
+    );
   }
 
+  // 初次 null === element 必是 false
   reconcileChildren(
     current,
     workInProgress,
@@ -699,12 +837,12 @@ function setValueForStyles(node, styles) {
   }
 }
 
-const topListenersIDKey = ' _reactListenersID -';
+const topListenersIDKey = " _reactListenersID -";
 const alreadyListeningTo = {};
 let reactTopListenersCounter = 0;
 
 function getListeningForDocument(mountAt) {
-  if(!Object.hasOwnProperty.call(mountAt, topListenersIDKey)) {
+  if (!Object.hasOwnProperty.call(mountAt, topListenersIDKey)) {
     mountAt[topListenersIDKey] = reactTopListenersCounter++;
     alreadyListeningTo[mountAt[topListenersIDKey]] = {};
   }
@@ -724,7 +862,7 @@ function listenTo(registrationName, mountAt) {
 
   for (let i = 0; i < dependencies.length; i++) {
     const dependency = dependencies[i];
-    if(isListening[dependency]) {
+    if (isListening[dependency]) {
       return;
     }
     switch (dependency) {
@@ -849,7 +987,7 @@ function completeUnitOfWork(workInProgress) {
      *           firstEffect: leaf,
      *           lastEffect : leaf
      *        }
-     *  此时要注意的是后面 commit phrase 的阶段, 要先处理 leaf (记得 componentDidMount 是要先 leaf -> parent ->root)
+     *  此时要注意的是后面  phrase 的阶段, 要先处理 leaf (记得 componentDidMount 是要先 leaf -> parent ->root)
      *  所以这里的链表要做处理
      *  returnFiber.firstEffect = workInProgress.firstEffect // 第一个处理的总是最外围的 leaf
      *  接着要处理 lastEffect , 此时也要考虑 returnFiber 有多个子组件的情况
@@ -1052,7 +1190,8 @@ function commitAllHostEffects() {
         break;
       }
       case Update: {
-        console.log(nextEffect);
+        console.log(" update ");
+
         break;
       }
       default:
@@ -1104,6 +1243,10 @@ function commitAllLifeCycle(finishedRoot) {
 }
 
 function completeRoot(root, finishedWork, expirationTime) {
+  commitRoot(root, finishedWork);
+}
+
+function commitRoot(root, finishedWork, expirationTime) {
   isWorking = true;
   isCommitting = true;
 
@@ -1132,6 +1275,8 @@ function completeRoot(root, finishedWork, expirationTime) {
       return;
     }
   }
+
+  root.current = finishedWork;
 
   isCommitting = false;
   isWorking = false;
@@ -1250,13 +1395,25 @@ function scheduleWorkToRoot(fiber, expirationTime) {
   if (node === null && fiber.tag === HostRoot) {
     return fiber.stateNode;
   }
+
+  // 更新
+  let alternate = fiber.alternate;
+  while (node !== null) {
+    alternate = node.alternate;
+
+    if (node.return === null && node.tag === HostRoot) {
+      return node.stateNode;
+    }
+  }
+
+  return null;
 }
 
 function scheduleWork(fiber, expirationTime) {
   const root = scheduleWorkToRoot(fiber, expirationTime);
 
   if (!root) {
-    console.log(`fiber 必有根, ${fiber}`);
+    console.error(`fiber 必有根, ${fiber}`);
     return;
   }
 
@@ -1270,7 +1427,6 @@ function createUpdate(expirationTime) {
   return {
     expirationTime,
     tag: UpdateState,
-
     payload: null,
     next: null
   };

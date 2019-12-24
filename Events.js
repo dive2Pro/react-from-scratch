@@ -92,11 +92,14 @@ function invokeGuardCallbackAndCatchFirstError(name, func, context) {
   try {
     func.apply(context, funcArgs);
   } catch(error) {
-    this.onError(error);
+      // TODO: onERROR
+    // this.onError(error);
+    console.error(error)
   }
 }
 
 function executeDispatch(event, simulated, listener, inst) {
+  console.log(event);
   const type = event.type || 'unknown-event';
   event.currentTarget = getNodeFromInstance(inst);
   invokeGuardCallbackAndCatchFirstError(type, listener, undefined, event);

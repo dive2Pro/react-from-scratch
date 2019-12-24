@@ -156,7 +156,8 @@ const SyntheticMouseEventInterface = {
       return 0;
     }
     return event.type === 'mousemove' ? event.screenX - screenX : 0;
-  }
+  },
+  type: null
 };
 
 const SyntheticMouseEvent = SyntheticEvent.expand(SyntheticMouseEventInterface);
