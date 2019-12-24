@@ -41,11 +41,12 @@ class App extends React.Component {
 
   onClick = evtInApp => {
     console.log(evtInApp, " ------ ------ ");
+    evtInApp.stopPropagation();
   };
 
   render() {
     return [
-      <div onClick={this.onClick}>
+      <div onClickCapture={this.onClick}>
         Hello World! <Main />
       </div>,
       <Child />
@@ -53,4 +54,4 @@ class App extends React.Component {
   }
 }
 
-ReactDOM.render(<App aha />, document.body);
+ReactDOM.render(<App aha />, document.getElementById("root"));
