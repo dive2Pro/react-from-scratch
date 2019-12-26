@@ -9,7 +9,7 @@ class Main extends React.Component {
   onClick = event => {
     event.stopPropagation();
     event.persist();
-    console.log(event)
+    console.log(event);
   };
   render() {
     return (
@@ -27,8 +27,7 @@ class Child extends React.Component {
       aha: "qwe"
     };
   }
-  componentWillMount() {
-  }
+  componentWillMount() {}
   render() {
     return <div>I am child - {this.state.aha}</div>;
   }
@@ -38,10 +37,9 @@ class Child extends React.Component {
 }
 
 class App extends React.Component {
-
   state = {
     text: 1
-  }
+  };
 
   onClick = evtInApp => {
     console.log(evtInApp, " ------ ------ ");
@@ -52,12 +50,12 @@ class App extends React.Component {
   };
 
   render() {
-    return [
+    return (
       <div onClickCapture={this.onClick}>
-        Hello World! <Main /> {this.state.text}
-      </div>,
-      <Child />
-    ];
+        <Child />
+        {this.state.text}
+      </div>
+    );
   }
 }
 

@@ -9,7 +9,8 @@ import {
   createFiber,
   Placement,
   Update,
-  PerformedWork
+  PerformedWork,
+  Deletion
 } from "./Fiber";
 import {
   registrationNameDependencies,
@@ -84,7 +85,57 @@ const ReactInstanceMap = {
 
 const UpdateState = 0;
 
-function commitWork() {}
+function commitTextUpdate(textInstance, oldText, newText) {
+  textInstance.nodeValue = newText;
+}
+
+function updateProperties() {}
+
+function commitUpdate(
+  domElement,
+  uploadPayload,
+  type,
+  oldProps,
+  newProps,
+  finishedWork
+) {
+  updateFiberProps(domElement, newProps);
+  updateProperties(domElement, uploadPayload, type, oldProps, newProps);
+}
+
+function commitWork(current, finishedWork) {
+  switch (finishedWork.tag) {
+    case HostComponent: {
+      const instance = finishedWork.stateNode;
+      if (instance != null) {
+        const newProps = finishedWork.memoizedProps;
+        const oldProps = current !== null ? current.memoizedProps : newProps;
+        const type = finishedWork.type;
+        const updatePayload = finishedWork.updateQueue;
+        finishedWork.updateQueue = null;
+
+        if (updatePayload !== null) {
+          commitUpdate(
+            instance,
+            updatePayload,
+            type,
+            oldProps,
+            newProps,
+            finishedWork
+          );
+        }
+      }
+      break;
+    }
+    case HostText: {
+      const textInstance = finishedWork.stateNode;
+      const newText = finishedWork.memoizedProps;
+      const oldText = current !== null ? current.memoizedProps : newText;
+      commitTextUpdate(textInstance, oldText, newText);
+      break;
+    }
+  }
+}
 
 const classComponentUpdater = {
   enqueueSetState(inst, payload, callback, callerName) {
@@ -450,21 +501,187 @@ function createChild(returnFiber, newChild, expirationTime) {
   return null;
 }
 
+function updateFromMap(
+  existingChildren,
+  returnFiber,
+  newIdx,
+  newChild,
+  expirationTime
+) {
+  if (typeof newChild === "number" || typeof newChild === "string") {
+    const matchedFiber = existingChildren.get(newIdx) || null;
+
+    return updateTextNode(
+      returnFiber,
+      matchedFiber,
+      newChild + "",
+      expirationTime
+    );
+  }
+
+  if (typeof newChild === "object" && newChild !== null) {
+    switch (newChild.$$typeof) {
+      case REACT_ELEMENT_TYPE: {
+        const matchedFiber =
+          existingChildren.get(newChild.key === null ? newIdx : newChild.key) ||
+          null;
+
+        return updateElement(
+          returnFiber,
+          matchedFiber,
+          newChild,
+          expirationTime
+        );
+      }
+    }
+
+    if (Array.isArray(newChild)) {
+      const matchedFiber = existingChildren.get(newIdx) || null;
+      return updateFragment(
+        returnFiber,
+        matchedFiber,
+        newChild,
+        expirationTime,
+        null
+      );
+    }
+  }
+
+  return null;
+}
+function mapRemainingChildren(returnFiber, currentFirstChild) {
+  const existingChildren = new Map();
+
+  let existingChild = currentFirstChild;
+  while (existingChild !== null) {
+    if (existingChild.key !== null) {
+      existingChildren.set(existingChild.key, existingChild);
+    } else {
+      existingChildren.set(existingChild.index, existingChild);
+    }
+    existingChild = existingChild.sibling;
+  }
+
+  return existingChildren;
+}
+
+function updateFragment(returnFiber, current, newElement, expirationTime) {
+  if (current === null || current.tag !== Fragment) {
+    const created = createFiberFromFragment(
+      newElement,
+      returnFiber.mode,
+      expirationTime
+    );
+    created.return = returnFiber;
+    return created;
+  }
+
+  const existing = useFiber(current, newElement, expirationTime);
+  existing.return = returnFiber;
+  return existing;
+}
+
+function updateElement(returnFiber, current, newElement, expirationTime) {
+  if (current !== null && current.type === newElement.type) {
+    const existing = useFiber(current, newElement.props, expirationTime);
+    existing.ref = newElement.ref;
+    existing.return = returnFiber;
+    return existing;
+  }
+
+  const created = createFiberFromElement(
+    newElement,
+    returnFiber.mode,
+    expirationTime
+  );
+  created.ref = newElement.ref;
+  created.return = returnFiber;
+
+  return created;
+}
+
+function useFiber(fiber, pendingProps, expirationTime) {
+  const clone = createworkInProcess(fiber, pendingProps, expirationTime);
+  clone.index = 0;
+  clone.sibling = null;
+  return clone;
+}
+
+function updateTextNode(returnFiber, current, textContent, expirationTime) {
+  if (current === null || current.tag !== HostText) {
+    const created = createFiberFromText(textContent, expirationTime);
+    created.return = returnFiber;
+    return created;
+  }
+
+  const existing = useFiber(current, textContent, expirationTime);
+  existing.return = returnFiber;
+  return existing;
+}
+
+function updateSlot(returnFiber, oldFiber, newChild, expirationTime) {
+  // React 中只有 组件会有 key 值
+  const key = oldFiber !== null ? oldFiber.key : null;
+
+  if (typeof newChild === "string" || typeof newChild === "number") {
+    if (key !== null) {
+      return null;
+    }
+
+    return updateTextNode(returnFiber, oldFiber, "" + newChild, expirationTime);
+  }
+
+  if (typeof newChild === "object" && newChild !== null) {
+    switch (newChild.$$typeof) {
+      case REACT_ELEMENT_TYPE: {
+        if (newChild.key === key) {
+          return updateElement(returnFiber, oldFiber, newChild, expirationTime);
+        }
+      }
+    }
+  }
+
+  if (Array.isArray(newChild)) {
+    if (key !== null) {
+      return null;
+    }
+
+    return updateFragment(
+      returnFiber,
+      oldFiber,
+      newChild,
+      expirationTime,
+      null
+    );
+  }
+  return null;
+}
+
 function reconcileArrayChildren(
   returnFiber,
   currentFirstChild,
   newChildren,
   expirationTime
 ) {
-  let resultingFirstFiber = null;
-  let newIndex = 0;
-  let oldFiber = currentFirstChild;
-  let previousFiber = null;
-  let lastPlacedIndex = 0;
+  function deleteChild(returnFiber, childToDelete) {
+    console.log(returnFiber, childToDelete, " ==== ");
+    if (!currentFirstChild) {
+      return;
+    }
+    const last = returnFiber.lastEffect;
+    if (last !== null) {
+      last.nextEffect = childToDelete;
+      returnFiber.lastEffect = childToDelete;
+    } else {
+      returnFiber.lastEffect = returnFiber.firstEffect = childToDelete;
+    }
 
+    childToDelete.nextEffect = null;
+    childToDelete.effectTag = Deletion;
+  }
   function placeChild(newFiber, lastPlacedIndex, newIndex) {
     newFiber.index = newIndex;
-    if (!newChildren) {
+    if (!currentFirstChild) {
       return lastPlacedIndex;
     }
 
@@ -484,7 +701,64 @@ function reconcileArrayChildren(
     }
   }
 
-  for (; oldFiber !== null && newIndex < newChildren.length; newIndex++) {}
+  function deleteRemainingChildren(returnFiber, currentFirstChild) {
+    if (!currentFirstChild) {
+      return;
+    }
+
+    let childToDelete = currentFirstChild;
+    while (childToDelete !== null) {
+      deleteChild(returnFiber, childToDelete);
+      childToDelete = childToDelete.sibling;
+    }
+
+    return null;
+  }
+  let resultingFirstFiber = null;
+  let newIndex = 0;
+  let oldFiber = currentFirstChild;
+  let previousFiber = null;
+  let lastPlacedIndex = 0;
+  let nextOldFiber = null;
+  for (; oldFiber !== null && newIndex < newChildren.length; newIndex++) {
+    nextOldFiber = oldFiber.sibling;
+
+    const newFiber = updateSlot(
+      returnFiber,
+      oldFiber,
+      newChildren[newIndex],
+      expirationTime
+    );
+
+    if (newFiber === null) {
+      // 由于当前 React 采用的是单向算法
+      // newFiber 为 null 则表示, 当前及以后的节点都不再适用更新策略
+      break;
+    }
+
+    if (newChildren) {
+      if (oldFiber && newFiber.alternate === null) {
+        // 可以利用当前的 slot, 但是 oldFiber 不会复用.
+        // 删除已存的 child
+        deleteChild(returnFiber, oldFiber);
+      }
+    }
+
+    lastPlacedIndex = placeChild(newFiber, lastPlacedIndex, newIndex);
+
+    if (previousFiber === null) {
+      resultingFirstFiber = newFiber;
+    } else {
+      previousFiber.sibling = newFiber;
+    }
+    previousFiber = newFiber;
+    oldFiber = nextOldFiber;
+  }
+
+  if (newIndex === newChildren.length) {
+    deleteRemainingChildren(returnFiber, oldFiber);
+    return resultingFirstFiber;
+  }
 
   if (oldFiber === null) {
     for (; newIndex < newChildren.length; newIndex++) {
@@ -506,8 +780,52 @@ function reconcileArrayChildren(
     }
 
     return resultingFirstFiber;
-  } else {
   }
+
+  /**
+   *  走到这里, 要检查可否利用旧的 fiber
+   *  使用 fiber 的 key 或者 index 值来匹配对比
+   */
+
+  const existingChildren = mapRemainingChildren(returnFiber, oldFiber);
+
+  for (; newIndex < newChildren; newIndex++) {
+    const newFiber = updateFromMap(
+      existingChildren,
+      returnFiber,
+      newIndex,
+      newChildren[newIndex],
+      expirationTime
+    );
+
+    if (newFiber) {
+      // 证明已经利用 oldFiber
+      if (newChildren) {
+        if (newFiber.alternate !== null) {
+          // 有 alternate 说明这个 fiber 是一个 workInProgress 的状态
+          // 并且这是一个被 reused 的 fiber.
+          // 把它从集合中删除, 因为集合中遗留的会被放入删除的 list 中
+          existingChildren.delete(
+            newFiber.key === null ? newIndex : newFiber.key
+          );
+        }
+      }
+
+      lastPlacedIndex = placeChild(newFiber, lastPlacedIndex, newIndex);
+      if (previousFiber === null) {
+        resultingFirstFiber = newFiber;
+      } else {
+        previousFiber.sibling = newFiber;
+      }
+      previousFiber = newFiber;
+    }
+  }
+
+  if (newChildren) {
+    existingChildren.forEach(child => deleteChild(returnFiber, child));
+  }
+
+  return resultingFirstFiber;
 }
 
 function reconcileChildrenFibers(
@@ -679,6 +997,13 @@ function updateHostText(current, workInProgress) {
   return null;
 }
 
+function updateFragmentBeginWork(current, workInProgress) {
+  const nextChildren = workInProgress.pendingProps;
+  reconcileChildren(current, workInProgress, nextChildren);
+  memoizedProps(workInProgress, nextChildren);
+  return workInProgress.child;
+}
+
 function beginWork(current, workInProgress, nextRenderexpirationTime) {
   switch (workInProgress.tag) {
     case ClassComponent:
@@ -701,6 +1026,8 @@ function beginWork(current, workInProgress, nextRenderexpirationTime) {
       );
     case HostText:
       return updateHostText(current, workInProgress);
+    case Fragment:
+      return updateFragmentBeginWork(current, workInProgress);
   }
 }
 
@@ -905,6 +1232,15 @@ function setInitalProperties(domElement, type, newProps, rootContainerElement) {
   }
 }
 
+function prepareUpdate(
+  domElement,
+  type,
+  oldProps,
+  newProps,
+  rootContainerInstance
+) {
+  // return diffProperties();
+}
 function completeWork(current, workInProgress, expirationTime) {
   const type = workInProgress.type;
   const newProps = workInProgress.pendingProps;
@@ -915,15 +1251,45 @@ function completeWork(current, workInProgress, expirationTime) {
       break;
     }
     case HostText: {
-      workInProgress.stateNode = createTextInstance(newProps, workInProgress);
+      let newText = newProps;
+      if (current && workInProgress.stateNode != null) {
+        const oldText = current.memoizedProps;
+
+        updateHostText(current, workInProgress, oldText, newText);
+      } else {
+        workInProgress.stateNode = createTextInstance(newText, workInProgress);
+      }
       break;
     }
     case HostComponent: {
       const rootContainerInstance = getRootHostContainer();
-      const instance = createInstance(type, workInProgress, newProps);
-      appendAllChildren(instance, workInProgress);
-      initialChildren(instance, type, newProps, rootContainerInstance);
-      workInProgress.stateNode = instance;
+      if (current !== null && workInProgress.stateNode !== null) {
+        const oldProps = current.memoizedProps;
+        if (oldProps !== newProps) {
+          const instance = workInProgress.stateNode;
+          const updatePayload = prepareUpdate(
+            instance,
+            type,
+            oldProps,
+            newProps,
+            rootContainerInstance
+          );
+          updateHostComponent(
+            current,
+            workInProgress,
+            updatePayload,
+            type,
+            oldProps,
+            newProps,
+            rootContainerInstance
+          );
+        }
+      } else {
+        const instance = createInstance(type, workInProgress, newProps);
+        appendAllChildren(instance, workInProgress);
+        initialChildren(instance, type, newProps, rootContainerInstance);
+        workInProgress.stateNode = instance;
+      }
       break;
     }
   }
@@ -1180,10 +1546,115 @@ function commitPlacement(finishedWork) {
   }
 }
 
+function commitUnmount(current) {
+  // call lifecyles
+  switch (current.tag) {
+  }
+}
+
+function commitNestedUnmounts(root) {
+  let node = root;
+
+  while (node !== null) {
+    commitUnmount(node);
+
+    if (node.child !== null) {
+      node.child.return = node;
+      node = node.child;
+      continue;
+    }
+    if (node === root) {
+      return;
+    }
+    while (node.sibling === null) {
+      if (node.return === null || node.return === root) {
+        return;
+      }
+      node = node.return;
+    }
+
+    node.sibling.return = node.return;
+    node = node.sibling;
+  }
+}
+function removeChild(container, child) {
+  container.removeChild(child);
+}
+
+function removeChildFromContainer(container, child) {
+  container.removeChild(child);
+}
+function unmountHostComponents(current) {
+  let node = current;
+
+  let currentParent = null;
+  let currentParentIsValid = false;
+  let currentParentIsContainer = false;
+
+  while (node !== null) {
+    while (!currentParentIsValid) {
+      let parentNode = node;
+      findParent: while (true) {
+        switch (parentNode.tag) {
+          case HostComponent:
+            currentParent = parentNode;
+            currentParentIsContainer = false;
+            break findParent;
+          case HostRoot:
+            currentParent = parentNode;
+            currentParentIsContainer = true;
+            break findParent;
+        }
+        parentNode = parentNode.return;
+      }
+      currentParentIsValid = true;
+    }
+
+    if (node.tag === HostComponent || node.tag === HostText) {
+      debugger;
+      commitNestedUnmounts(node);
+      if (currentParentIsContainer) {
+        removeChildFromContainer(currentParent, node.stateNode);
+      } else {
+        removeChild(currentParent, node.stateNode);
+      }
+    } else {
+      commitUnmount(node);
+      if (node.child !== null) {
+        node.child.return = node;
+        node = node.child;
+        continue;
+      }
+    }
+
+    while (node.sibling === null) {
+      if (node.return === null || node.return === current) {
+        return;
+      }
+      node = node.return;
+    }
+
+    node.sibling.return = node.return;
+    node = node.sibling;
+  }
+}
+
+/**
+ * 此时 我们只知道当前的要删除的节点
+ * 但是需要递归找到所有会影响到的子节点
+ * 因为要触发生命周期函数 willUnmount
+ * @param current
+ */
+function commitDeletion(current) {
+  unmountHostComponents(current);
+  detachFiber(current);
+}
+
+function detachFiber() {}
 function commitAllHostEffects() {
   while (nextEffect !== null) {
     const effectTag = nextEffect.effectTag;
-    const primaryEffect = effectTag & (Placement | Update);
+    const primaryEffect = effectTag & (Placement | Update | Deletion);
     switch (primaryEffect) {
       case Placement: {
         commitPlacement(nextEffect);
@@ -1191,7 +1662,13 @@ function commitAllHostEffects() {
       }
       case Update: {
         console.log(" update ");
-
+        const current = nextEffect.alternate;
+        commitWork(current, nextEffect);
+        break;
+      }
+      case Deletion: {
+        console.log(" Deletion ");
+        commitDeletion(nextEffect);
         break;
       }
       default:
@@ -1346,7 +1823,7 @@ function computeExpirationForFiber(currentTime, fiber) {
 }
 
 function getContextForSubtree(parentComponent) {
-  // TODO:
+  // TODO:;;
   return {};
 }
 
