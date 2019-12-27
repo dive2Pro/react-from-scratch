@@ -214,6 +214,13 @@ function finishClassComponent(
   const instance = workInProgress.stateNode;
   nextChildren = instance.render();
 
+  if (!shouldUpdate) {
+    return bailoutOnAlreadyFinishedWork(
+      current,
+      workInProgress,
+      expirationTime
+    );
+  }
   reconcileChildren(current, workInProgress, nextChildren, expirationTime);
 
   memoizedState(workInProgress, instance.state);
@@ -440,6 +447,14 @@ function reconcileSingleTextNode(
   textContent,
   expirationTime
 ) {
+  if (currentFirstChild !== null && currentFirstChild.tag === HostText) {
+    deleteRemainingChildren(returnFiber, currentFirstChild.sibling);
+    const existing = useFiber(returnFiber, currentFirstChild.sibling);
+    existing.return = returnFiber;
+
+    return existing;
+  }
+  deleteRemainingChildren(returnFiber, currentFirstChild);
   const created = createFiberFromText(
     textContent,
     returnFiber.mode,
@@ -455,6 +470,34 @@ function reconcileSingleElement(
   element,
   expirationTime
 ) {
+  const key = element.key;
+  let child = currentFirstChild;
+  while (child !== null) {
+    if (child.key === key) {
+      if (
+        child.tag === Fragment
+          ? element.type === REACT_ELEMENT_TYPE
+          : child.type === element.type
+      ) {
+        deleteRemainingChildren(returnFiber, child.sibling);
+        const existing = useFiber(
+          child,
+          element.type === REACT_ELEMENT_TYPE
+            ? element.props.children
+            : element.props,
+          expirationTime
+        );
+
+        existing.return = returnFiber;
+        return existing;
+      } else {
+        deleteRemainingChildren(returnFiber, child);
+        break;
+      }
+    } else {
+      deleteChild(returnFiber, child);
+    }
+  }
   const created = createFiberFromElement(
     element,
     returnFiber.mode,
@@ -601,7 +644,7 @@ function updateElement(returnFiber, current, newElement, expirationTime) {
 }
 
 function useFiber(fiber, pendingProps, expirationTime) {
-  const clone = createworkInProcess(fiber, pendingProps, expirationTime);
+  const clone = createWorkInProcess(fiber, pendingProps, expirationTime);
   clone.index = 0;
   clone.sibling = null;
   return clone;
@@ -657,28 +700,40 @@ function updateSlot(returnFiber, oldFiber, newChild, expirationTime) {
   return null;
 }
 
+function deleteChild(returnFiber, childToDelete) {
+  if (!childToDelete) {
+    return;
+  }
+  const last = returnFiber.lastEffect;
+  if (last !== null) {
+    last.nextEffect = childToDelete;
+    returnFiber.lastEffect = childToDelete;
+  } else {
+    returnFiber.lastEffect = returnFiber.firstEffect = childToDelete;
+  }
+
+  childToDelete.nextEffect = null;
+  childToDelete.effectTag = Deletion;
+}
+function deleteRemainingChildren(returnFiber, currentFirstChild) {
+  if (!currentFirstChild) {
+    return;
+  }
+
+  let childToDelete = currentFirstChild;
+  while (childToDelete !== null) {
+    deleteChild(returnFiber, childToDelete);
+    childToDelete = childToDelete.sibling;
+  }
+
+  return null;
+}
 function reconcileArrayChildren(
   returnFiber,
   currentFirstChild,
   newChildren,
   expirationTime
 ) {
-  function deleteChild(returnFiber, childToDelete) {
-    console.log(returnFiber, childToDelete, " ==== ");
-    if (!currentFirstChild) {
-      return;
-    }
-    const last = returnFiber.lastEffect;
-    if (last !== null) {
-      last.nextEffect = childToDelete;
-      returnFiber.lastEffect = childToDelete;
-    } else {
-      returnFiber.lastEffect = returnFiber.firstEffect = childToDelete;
-    }
-
-    childToDelete.nextEffect = null;
-    childToDelete.effectTag = Deletion;
-  }
   function placeChild(newFiber, lastPlacedIndex, newIndex) {
     newFiber.index = newIndex;
     if (!currentFirstChild) {
@@ -701,19 +756,6 @@ function reconcileArrayChildren(
     }
   }
 
-  function deleteRemainingChildren(returnFiber, currentFirstChild) {
-    if (!currentFirstChild) {
-      return;
-    }
-
-    let childToDelete = currentFirstChild;
-    while (childToDelete !== null) {
-      deleteChild(returnFiber, childToDelete);
-      childToDelete = childToDelete.sibling;
-    }
-
-    return null;
-  }
   let resultingFirstFiber = null;
   let newIndex = 0;
   let oldFiber = currentFirstChild;
@@ -913,7 +955,7 @@ function cloneChildFibers(current, workInProgress) {
 
   let currentChild = workInProgress.child;
 
-  let newChild = createworkInProcess(
+  let newChild = createWorkInProcess(
     currentChild,
     currentChild.pendingProps,
     currentChild.expirationTime
@@ -925,7 +967,7 @@ function cloneChildFibers(current, workInProgress) {
 
   while (currentChild.sibling !== null) {
     currentChild = currentChild.sibling;
-    newChild = newChild.sibling = createworkInProcess(
+    newChild = newChild.sibling = createWorkInProcess(
       currentChild,
       currentChild.pendingProps,
       currentChild.expirationTime
@@ -1005,6 +1047,14 @@ function updateFragmentBeginWork(current, workInProgress) {
 }
 
 function beginWork(current, workInProgress, nextRenderexpirationTime) {
+  if (workInProgress.pendingProps === null) {
+      debugger
+    return bailoutOnAlreadyFinishedWork(
+      current,
+      workInProgress,
+      nextRenderexpirationTime
+    );
+  }
   switch (workInProgress.tag) {
     case ClassComponent:
       const Component = workInProgress.type;
@@ -1055,11 +1105,11 @@ function resetStack() {
   nextRoot = null;
 }
 
-function createworkInProcess(current, pendingProps, expirationTime) {
+function createWorkInProcess(current, pendingProps, expirationTime) {
   let workInProgress = current.alternate;
 
   if (workInProgress === null) {
-    workInProgress = createFiber(current.tag, current.pendingProps);
+    workInProgress = createFiber(current.tag, pendingProps);
     workInProgress.type = current.type;
     workInProgress.stateNode = current.stateNode;
 
@@ -1252,10 +1302,10 @@ function completeWork(current, workInProgress, expirationTime) {
     }
     case HostText: {
       let newText = newProps;
+      debugger;
       if (current && workInProgress.stateNode != null) {
         const oldText = current.memoizedProps;
-
-        updateHostText(current, workInProgress, oldText, newText);
+        updateHostTextOnComplete(current, workInProgress, oldText, newText);
       } else {
         workInProgress.stateNode = createTextInstance(newText, workInProgress);
       }
@@ -1274,7 +1324,7 @@ function completeWork(current, workInProgress, expirationTime) {
             newProps,
             rootContainerInstance
           );
-          updateHostComponent(
+          updateHostComponentOnComplete(
             current,
             workInProgress,
             updatePayload,
@@ -1296,9 +1346,26 @@ function completeWork(current, workInProgress, expirationTime) {
   return null;
 }
 
+function markUpdate(workInProgress) {
+  workInProgress.effectTag |= Update;
+}
+
+function updateHostTextOnComplete(current, workInProgress, oldText, newText) {
+  if (oldText !== newText) {
+    markUpdate(workInProgress);
+  }
+}
+
+function updateHostComponentOnComplete(current, workInProgress, updatePayload) {
+  workInProgress.updateQueue = updatePayload;
+  if (updatePayload) {
+    markUpdate(workInProgress);
+  }
+}
+
 function completeUnitOfWork(workInProgress) {
   while (true) {
-    const current = workInProgress.current;
+    const current = workInProgress.alternate;
     const siblingFiber = workInProgress.sibling;
     const returnFiber = workInProgress.return;
 
@@ -1443,7 +1510,7 @@ function renderRoot(root, isYield, isExpired) {
     resetStack();
     nextRoot = root;
     nextRenderexpirationTime = expirationTime;
-    nextUnitOfWork = createworkInProcess(
+    nextUnitOfWork = createWorkInProcess(
       nextRoot.current,
       null,
       nextRenderexpirationTime
