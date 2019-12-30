@@ -1,9 +1,4 @@
 import {
-  NoWork,
-  Sync,
-  HostRoot,
-  HostText,
-  ClassComponent,
   createFiberRoot,
   createFiberFromText,
   createFiber,
@@ -12,6 +7,13 @@ import {
   PerformedWork,
   Deletion
 } from "./Fiber";
+import {
+  NoWork,
+  Sync,
+  HostRoot,
+  HostText,
+  ClassComponent
+} from "./ReactFiberExpirationTime";
 import {
   registrationNameDependencies,
   registrationNameModules
@@ -34,6 +36,7 @@ let lastScheduleRoot = null;
 let firstScheduleRoot = null;
 
 let expirationContext = NoWork; // 上下文
+console.log(expirationContext, " ==== ");
 let nextRenderexpirationTime = NoWork;
 let nextRoot = null;
 let nextUnitOfWork = null;
@@ -136,14 +139,20 @@ function commitWork(current, finishedWork) {
     }
   }
 }
+function requestCurrentTime() {
+  findHighestPriorityRoot();
+  return Date.now();
+}
 
 const classComponentUpdater = {
   enqueueSetState(inst, payload, callback, callerName) {
     const fiber = ReactInstanceMap.get(inst);
-    const update = createUpdate();
+    const currentTime = requestCurrentTime();
+    const expirationTime = computeExpirationForFiber(currentTime, fiber);
+    const update = createUpdate(expirationTime);
     update.payload = payload;
     enqueueUpdater(fiber, update);
-    scheduleWork(fiber);
+    scheduleWork(fiber, expirationTime);
   }
 };
 
@@ -449,7 +458,7 @@ function reconcileSingleTextNode(
 ) {
   if (currentFirstChild !== null && currentFirstChild.tag === HostText) {
     deleteRemainingChildren(returnFiber, currentFirstChild.sibling);
-    const existing = useFiber(returnFiber, currentFirstChild.sibling);
+    const existing = useFiber(currentFirstChild, textContent, expirationTime);
     existing.return = returnFiber;
 
     return existing;
@@ -644,7 +653,7 @@ function updateElement(returnFiber, current, newElement, expirationTime) {
 }
 
 function useFiber(fiber, pendingProps, expirationTime) {
-  const clone = createWorkInProcess(fiber, pendingProps, expirationTime);
+  const clone = createWorkInProgress(fiber, pendingProps, expirationTime);
   clone.index = 0;
   clone.sibling = null;
   return clone;
@@ -955,7 +964,7 @@ function cloneChildFibers(current, workInProgress) {
 
   let currentChild = workInProgress.child;
 
-  let newChild = createWorkInProcess(
+  let newChild = createWorkInProgress(
     currentChild,
     currentChild.pendingProps,
     currentChild.expirationTime
@@ -967,7 +976,7 @@ function cloneChildFibers(current, workInProgress) {
 
   while (currentChild.sibling !== null) {
     currentChild = currentChild.sibling;
-    newChild = newChild.sibling = createWorkInProcess(
+    newChild = newChild.sibling = createWorkInProgress(
       currentChild,
       currentChild.pendingProps,
       currentChild.expirationTime
@@ -1035,6 +1044,7 @@ function updateHostComponent(current, workInProgress, expirationTime) {
 
 function updateHostText(current, workInProgress) {
   const props = workInProgress.pendingProps;
+  debugger;
   memoizedProps(workInProgress, props);
   return null;
 }
@@ -1047,14 +1057,20 @@ function updateFragmentBeginWork(current, workInProgress) {
 }
 
 function beginWork(current, workInProgress, nextRenderexpirationTime) {
-  if (workInProgress.pendingProps === null) {
-      debugger
+  const updateExpirationTime = workInProgress.expirationTime;
+  if (
+    updateExpirationTime === NoWork ||
+    updateExpirationTime > nextRenderexpirationTime
+  ) {
     return bailoutOnAlreadyFinishedWork(
       current,
       workInProgress,
       nextRenderexpirationTime
     );
   }
+
+  workInProgress.expirationTime = NoWork;
+
   switch (workInProgress.tag) {
     case ClassComponent:
       const Component = workInProgress.type;
@@ -1085,14 +1101,47 @@ function findHighestPriorityRoot() {
   let highestPriorityWork = NoWork;
   let highestPriorityRoot = null;
   if (lastScheduleRoot !== null) {
-    let root = lastScheduleRoot;
+    let previousScheduledRoot = lastScheduleRoot;
+    //  第一次为  mount, 要第二次进入更新任务处理 才会来这里
+    let root = firstScheduleRoot;
     while (root !== null) {
-      if (highestPriorityWork === NoWork) {
-        highestPriorityRoot = root;
-        highestPriorityWork = root.expirationTime;
-      }
-      if (root === lastScheduleRoot) {
-        break;
+      const remainingExpirationTime = root.expirationTime;
+      if (remainingExpirationTime === NoWork) {
+        if (root === root.nextScheduleRoot) {
+          root.nextScheduleRoot = null;
+          firstScheduleRoot = lastScheduleRoot = null;
+          break;
+        } else if (root === firstScheduleRoot) {
+          const next = root.nextScheduleRoot;
+          firstScheduleRoot = next;
+          lastScheduleRoot.nextScheduleRoot = next;
+          root.nextScheduleRoot = null;
+        } else if (root === lastScheduleRoot) {
+          lastScheduleRoot = previousScheduledRoot;
+          lastScheduleRoot.nextScheduleRoot = firstScheduleRoot;
+          root.nextScheduleRoot = null;
+          break;
+        } else {
+          previousScheduledRoot.nextScheduleRoot = root.nextScheduleRoot;
+          root.nextScheduleRoot = null;
+        }
+        root = previousScheduledRoot.nextScheduleRoot;
+      } else {
+        if (
+          highestPriorityWork === NoWork ||
+          remainingExpirationTime < highestPriorityWork
+        ) {
+          highestPriorityRoot = root;
+          highestPriorityWork = root.expirationTime;
+        }
+        if (root === lastScheduleRoot) {
+          break;
+        }
+        if (highestPriorityWork === Sync) {
+          break;
+        }
+        previousScheduledRoot = root;
+        root = root.nextScheduleRoot;
       }
     }
   }
@@ -1105,7 +1154,7 @@ function resetStack() {
   nextRoot = null;
 }
 
-function createWorkInProcess(current, pendingProps, expirationTime) {
+function createWorkInProgress(current, pendingProps, expirationTime) {
   let workInProgress = current.alternate;
 
   if (workInProgress === null) {
@@ -1119,7 +1168,11 @@ function createWorkInProcess(current, pendingProps, expirationTime) {
     workInProgress.pendingProps = pendingProps;
   }
 
-  workInProgress.expirationTime = current.expirationTime;
+  if (pendingProps !== current.pendingProps) {
+    workInProgress.expirationTime = expirationTime;
+  } else {
+    workInProgress.expirationTime = current.expirationTime;
+  }
 
   workInProgress.child = current.child;
   workInProgress.memoizedState = current.memoizedState;
@@ -1510,7 +1563,7 @@ function renderRoot(root, isYield, isExpired) {
     resetStack();
     nextRoot = root;
     nextRenderexpirationTime = expirationTime;
-    nextUnitOfWork = createWorkInProcess(
+    nextUnitOfWork = createWorkInProgress(
       nextRoot.current,
       null,
       nextRenderexpirationTime
@@ -1869,12 +1922,20 @@ function requestWork(root, expirationTime) {
 }
 
 function addRootToSchedule(root, expirationTime) {
-  // ... 第一次 mount 时, 此处的代码用不到 (大雾)
   if (root.nextScheduleRoot === null) {
     root.expirationTime = expirationTime;
     if (lastScheduleRoot === null) {
       lastScheduleRoot = firstScheduleRoot = root;
       root.nextScheduleRoot = root;
+    }
+  } else {
+    // 更新时 提高 Fiber 的优先级
+    const remainingExpirationTime = root.expirationTime;
+    if (
+      remainingExpirationTime === NoWork ||
+      expirationTime < remainingExpirationTime
+    ) {
+      root.expirationTime = expirationTime;
     }
   }
 }
@@ -1953,6 +2014,11 @@ function scheduleWorkToRoot(fiber, expirationTime) {
   return null;
 }
 
+function markPendingPriorityLevel(root, expirationTime) {
+  root.nextExpirationTimeToWorkOn = expirationTime;
+  root.expirationTime = expirationTime;
+}
+
 function scheduleWork(fiber, expirationTime) {
   const root = scheduleWorkToRoot(fiber, expirationTime);
 
@@ -1960,10 +2026,10 @@ function scheduleWork(fiber, expirationTime) {
     console.error(`fiber 必有根, ${fiber}`);
     return;
   }
-
+  markPendingPriorityLevel(root, expirationTime);
   if (!isWorking || isCommitting) {
-    const rootexpirationTime = root.expirationTime;
-    requestWork(root, rootexpirationTime);
+    const rootExpirationTime = root.expirationTime;
+    requestWork(root, rootExpirationTime);
   }
 }
 
@@ -2018,7 +2084,7 @@ function updateContainerAtExpiration(
 function updateContainer(elements, container, parentComponent, callback) {
   const current = container.current;
 
-  const currentTime = Date.now();
+  const currentTime = requestCurrentTime();
 
   const expirationTime = computeExpirationForFiber(currentTime, current);
 

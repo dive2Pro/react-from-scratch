@@ -86,7 +86,6 @@ export function getListener(inst, registrationName) {
 }
 
 
-// TODO: error handler
 function invokeGuardCallbackAndCatchFirstError(name, func, context) {
   const funcArgs = Array.prototype.slice.call(arguments, 3);
   try {
@@ -108,7 +107,7 @@ function executeDispatch(event, simulated, listener, inst) {
 }
 
 function executeDispatchesInOrder(event, simulated) {
-  /** 如果记得的话, 这两个是同时用同种方式插入的集合 */
+  /** 记得的话, 这两个是同时用同种方式插入的集合 */
   const dispatchListeners = event._dispatchListeners;
   const dispatchInstances = event._dispatchInstances;
 
