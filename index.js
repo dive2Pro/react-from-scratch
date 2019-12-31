@@ -52,6 +52,7 @@ class App extends React.Component {
   render() {
     return (
       <div onClickCapture={this.onClick}>
+        <Child />
         {this.state.text}
       </div>
     );

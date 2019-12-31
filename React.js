@@ -1,12 +1,21 @@
 import {REACT_ELEMENT_TYPE} from './ReactFiberReconciler'
 import { Component } from './ReactBaseClass';
 
+function hasValidKey(config) {
+    return config.key !== undefined;
+}
+
 const React = {
     createElement: function (type, config, children) {
 
         const props =  {};
 
+        let key = null;
+
         if(config) {
+            if(hasValidKey(config)) {
+                key = '' + config.key;
+            }
             for(let propName in config) {
                 props[propName] = config[propName]
             }
@@ -18,7 +27,7 @@ const React = {
         } else {
             const lastChildren = Array(childrenLength);
             for(let i = 0 ; i < childrenLength ; i ++) {
-                lastChildren.push(arguments[i + 2]);
+                lastChildren[i] = arguments[i + 2];
             }
             props.children = lastChildren;
         }
@@ -30,8 +39,9 @@ const React = {
                 }
             }
         }
-        
+
         return {
+            key,
             type,
             props,
             $$typeof: REACT_ELEMENT_TYPE

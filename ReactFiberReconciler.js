@@ -411,12 +411,6 @@ function processUpdateQueue(
   workInProgress.memoizedState = resultState;
 }
 
-function placeSingleChild(fiber) {
-  if (fiber.alternate === null) {
-    fiber.effectTag = Placement;
-  }
-  return fiber;
-}
 
 function shouldConstruct(Component) {
   const prototype = Component.prototype;
@@ -741,7 +735,8 @@ function reconcileArrayChildren(
   returnFiber,
   currentFirstChild,
   newChildren,
-  expirationTime
+  expirationTime,
+  isMountProcess
 ) {
   function placeChild(newFiber, lastPlacedIndex, newIndex) {
     newFiber.index = newIndex;
@@ -840,7 +835,7 @@ function reconcileArrayChildren(
 
   const existingChildren = mapRemainingChildren(returnFiber, oldFiber);
 
-  for (; newIndex < newChildren; newIndex++) {
+  for (; newIndex < newChildren.length; newIndex++) {
     const newFiber = updateFromMap(
       existingChildren,
       returnFiber,
@@ -851,7 +846,7 @@ function reconcileArrayChildren(
 
     if (newFiber) {
       // 证明已经利用 oldFiber
-      if (newChildren) {
+      if (!isMountProcess) {
         if (newFiber.alternate !== null) {
           // 有 alternate 说明这个 fiber 是一个 workInProgress 的状态
           // 并且这是一个被 reused 的 fiber.
@@ -872,7 +867,7 @@ function reconcileArrayChildren(
     }
   }
 
-  if (newChildren) {
+  if (!isMountProcess) {
     existingChildren.forEach(child => deleteChild(returnFiber, child));
   }
 
@@ -883,8 +878,15 @@ function reconcileChildrenFibers(
   returnFiber,
   currentFirstChild,
   newChild,
-  expirationTime
+  expirationTime,
+  isMountProcess
 ) {
+  function placeSingleChild(fiber) {
+    if(!isMountProcess && fiber.alternate === null) {
+      fiber.effectTag = Placement;
+    }
+    return fiber;
+  }
   const isObject = typeof newChild === "object" && newChild !== null;
   if (isObject) {
     switch (newChild.$$typeof) {
@@ -915,7 +917,8 @@ function reconcileChildrenFibers(
       returnFiber,
       currentFirstChild,
       newChild,
-      expirationTime
+      expirationTime,
+        isMountProcess
     );
   }
 }
@@ -930,7 +933,8 @@ function mountChildrenFibers(
     returnFiber,
     currentFirstChild,
     newChild,
-    expirationTime
+    expirationTime,
+     true
   );
 }
 
@@ -952,7 +956,8 @@ function reconcileChildren(
       workInProgress,
       current.child,
       nextChildren,
-      nextRenderexpirationTime
+      nextRenderexpirationTime,
+        false
     );
   }
 }
@@ -1044,7 +1049,6 @@ function updateHostComponent(current, workInProgress, expirationTime) {
 
 function updateHostText(current, workInProgress) {
   const props = workInProgress.pendingProps;
-  debugger;
   memoizedProps(workInProgress, props);
   return null;
 }
@@ -1355,7 +1359,6 @@ function completeWork(current, workInProgress, expirationTime) {
     }
     case HostText: {
       let newText = newProps;
-      debugger;
       if (current && workInProgress.stateNode != null) {
         const oldText = current.memoizedProps;
         updateHostTextOnComplete(current, workInProgress, oldText, newText);
@@ -1734,9 +1737,9 @@ function unmountHostComponents(current) {
       debugger;
       commitNestedUnmounts(node);
       if (currentParentIsContainer) {
-        removeChildFromContainer(currentParent, node.stateNode);
+        removeChildFromContainer(currentParent.stateNode, node.stateNode);
       } else {
-        removeChild(currentParent, node.stateNode);
+        removeChild(currentParent.stateNode, node.stateNode);
       }
     } else {
       commitUnmount(node);
@@ -1787,7 +1790,6 @@ function commitAllHostEffects() {
         break;
       }
       case Deletion: {
-        console.log(" Deletion ");
         commitDeletion(nextEffect);
         break;
       }

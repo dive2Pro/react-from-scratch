@@ -18,6 +18,7 @@ function Fiber(tag, pendingProps) {
   this.alternate = null;
   this.expirationTime = NoWork;
   this.type = null;
+  this.key = null;
 
   this.effectTag = NoEffect;
 
