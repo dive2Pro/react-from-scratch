@@ -6,15 +6,29 @@ import React from "./React";
 // }), document.body)
 
 class Main extends React.Component {
+  constructor() {
+    super();
+    this.state = {
+      count: 1
+    };
+  }
   onClick = event => {
     event.stopPropagation();
     event.persist();
-    console.log(event);
+    this.setState({});
   };
+
+  componentDidMount() {
+    setTimeout(() => {
+      // this.setState({
+      //   count: this.state.count + 1
+      // });
+    }, 1000);
+  }
   render() {
     return (
       <div onClick={this.onClick} style={{ color: "red" }}>
-        Coco
+        Coco - {this.state.count}
       </div>
     );
   }
@@ -29,7 +43,11 @@ class Child extends React.Component {
   }
   componentWillMount() {}
   render() {
-    return <div>I am child - {this.state.aha}</div>;
+    return (
+      <div>
+        <Main />I am child - {this.state.aha}
+      </div>
+    );
   }
   componentDidMount() {
     console.log("did mount");
@@ -42,18 +60,18 @@ class App extends React.Component {
   };
 
   onClick = evtInApp => {
-    console.log(evtInApp, " ------ ------ ");
     evtInApp.stopPropagation();
     this.setState({
-      text: 2
+      text: this.state.text + 1
     });
   };
 
   render() {
     return (
       <div onClickCapture={this.onClick}>
-        <Child />
+        {/*<Child />*/}
         {this.state.text}
+        {/*<Child />*/}
       </div>
     );
   }

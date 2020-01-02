@@ -5,7 +5,8 @@ import {
   Placement,
   Update,
   PerformedWork,
-  Deletion
+  Deletion,
+  NoEffect
 } from "./Fiber";
 import {
   NoWork,
@@ -345,7 +346,7 @@ function cloneUpdateQueue(queue) {
   };
 }
 
-function ensureworkInProcessQueueIsAClone(workInProgress, updateQueue) {
+function ensureWorkInProcessQueueIsAClone(workInProgress, updateQueue) {
   const current = workInProgress.alternate;
   if (current !== null) {
     if (updateQueue === current.updateQueue) {
@@ -384,7 +385,7 @@ function processUpdateQueue(
   instance,
   nextRenderexpirationTime
 ) {
-  queue = ensureworkInProcessQueueIsAClone(workInProgress, queue);
+  queue = ensureWorkInProcessQueueIsAClone(workInProgress, queue);
   let newBaseState = queue.baseState;
   let resultState = newBaseState;
   let newExpirationWork = NoWork;
@@ -404,13 +405,19 @@ function processUpdateQueue(
 
     update = update.next;
   }
-  newBaseState = resultState;
+  if (newFirstUpdate === null) {
+    queue.lastUpdate = null;
+  }
+
+  if (newFirstUpdate === null) {
+    newBaseState = resultState;
+  }
   queue.baseState = newBaseState;
   queue.firstUpdate = newFirstUpdate;
+  console.log(queue.firstUpdate, " --- ");
 
   workInProgress.memoizedState = resultState;
 }
-
 
 function shouldConstruct(Component) {
   const prototype = Component.prototype;
@@ -647,6 +654,7 @@ function updateElement(returnFiber, current, newElement, expirationTime) {
 }
 
 function useFiber(fiber, pendingProps, expirationTime) {
+  console.log(expirationTime, " == ");
   const clone = createWorkInProgress(fiber, pendingProps, expirationTime);
   clone.index = 0;
   clone.sibling = null;
@@ -882,7 +890,7 @@ function reconcileChildrenFibers(
   isMountProcess
 ) {
   function placeSingleChild(fiber) {
-    if(!isMountProcess && fiber.alternate === null) {
+    if (!isMountProcess && fiber.alternate === null) {
       fiber.effectTag = Placement;
     }
     return fiber;
@@ -918,7 +926,7 @@ function reconcileChildrenFibers(
       currentFirstChild,
       newChild,
       expirationTime,
-        isMountProcess
+      isMountProcess
     );
   }
 }
@@ -934,7 +942,7 @@ function mountChildrenFibers(
     currentFirstChild,
     newChild,
     expirationTime,
-     true
+    true
   );
 }
 
@@ -942,22 +950,22 @@ function reconcileChildren(
   current,
   workInProgress,
   nextChildren,
-  nextRenderexpirationTime
+  nextRenderExpirationTime
 ) {
   if (current === null) {
     workInProgress.child = mountChildrenFibers(
       workInProgress,
       null,
       nextChildren,
-      nextRenderexpirationTime
+      nextRenderExpirationTime
     );
   } else {
     workInProgress.child = reconcileChildrenFibers(
       workInProgress,
       current.child,
       nextChildren,
-      nextRenderexpirationTime,
-        false
+      nextRenderExpirationTime,
+      false
     );
   }
 }
@@ -1170,6 +1178,11 @@ function createWorkInProgress(current, pendingProps, expirationTime) {
     current.alternate = workInProgress;
   } else {
     workInProgress.pendingProps = pendingProps;
+
+    workInProgress.effectTag = NoEffect;
+    workInProgress.nextEffect = null;
+    workInProgress.firstEffect = null;
+    workInProgress.lastEffect = null;
   }
 
   if (pendingProps !== current.pendingProps) {
@@ -1529,6 +1542,7 @@ function completeUnitOfWork(workInProgress) {
       returnFiber.lastEffect = workInProgress;
     }
 
+    console.log(returnFiber, " --");
     if (siblingFiber !== null) {
       return siblingFiber;
     } else if (returnFiber !== null) {
@@ -1561,7 +1575,7 @@ function workLoop() {
 function renderRoot(root, isYield, isExpired) {
   isWorking = true;
 
-  let expirationTime = root.nextRenderexpirationTime;
+  let expirationTime = root.nextExpirationTimeToWorkOn;
   if (nextUnitOfWork === null) {
     resetStack();
     nextRoot = root;
@@ -1806,8 +1820,8 @@ function commitLifeCycles(finishedRoot, current, finishedWork) {
       const instance = finishedWork.stateNode;
       if (finishedWork.effectTag & Update) {
         if (current === null) {
-          instance.props = instance.memoizedProps;
-          instance.state = instance.memoizedState;
+          instance.props = finishedWork.memoizedProps;
+          instance.state = finishedWork.memoizedState;
           instance.componentDidMount();
         }
       }
@@ -1968,6 +1982,9 @@ function createUpdateQueue(baseState) {
 function appendUpdateToQueue(queue, update) {
   if (queue.lastUpdate === null) {
     queue.firstUpdate = queue.lastUpdate = update;
+  } else {
+    queue.lastUpdate.next = update;
+    queue.lastUpdate = update;
   }
 }
 
@@ -1978,14 +1995,39 @@ function enqueueUpdater(fiber, update) {
   if (alternate === null) {
     queue1 = fiber.updateQueue;
     queue2 = null;
-
     if (queue1 === null) {
       queue1 = fiber.updateQueue = createUpdateQueue(fiber.memoizedState);
+    }
+  } else {
+    // 第二次某个组件更新时, 其 alternate 也已经存在了
+    queue1 = fiber.updateQueue;
+    queue2 = alternate.updateQueue;
+    if (queue1 === null) {
+      if (queue2 === null) {
+        queue1 = fiber.updateQueue = createUpdateQueue(fiber.memoizedState);
+        queue2 = alternate.updateQueue = createUpdateQueue(
+          alternate.memoizedState
+        );
+      } else {
+        queue1 = fiber.updateQueue = cloneUpdateQueue(queue2);
+      }
+    } else {
+      if (queue2 === null) {
+        queue2 = alternate.updateQueue = cloneUpdateQueue(queue1);
+      }
     }
   }
 
   if (queue2 === null || queue1 === queue2) {
     appendUpdateToQueue(queue1, update);
+  } else {
+    if (queue1.lastUpdate === null || queue2.lastUpdate === null) {
+      appendUpdateToQueue(queue1, update);
+      appendUpdateToQueue(queue2, update);
+    } else {
+      appendUpdateToQueue(queue1, update);
+      queue2.lastUpdate = update;
+    }
   }
 }
 
@@ -2007,10 +2049,10 @@ function scheduleWorkToRoot(fiber, expirationTime) {
   let alternate = fiber.alternate;
   while (node !== null) {
     alternate = node.alternate;
-
     if (node.return === null && node.tag === HostRoot) {
       return node.stateNode;
     }
+    node = node.return;
   }
 
   return null;

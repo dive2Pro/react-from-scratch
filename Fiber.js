@@ -16,8 +16,20 @@ function Fiber(tag, pendingProps) {
   this.tag = tag;
   this.pendingProps = pendingProps;
   this.alternate = null;
-  this.expirationTime = NoWork;
+  this.v = NoWork;
+  Object.defineProperty(this, 'expirationTime', {
+    set(setV) {
+      this.v = setV;
+      if( this.tag === 11 && setV === 1) {
+        console.log('------')
+      }
+    },
+    get() {
+      return this.v
+    }
+  });
   this.type = null;
+  this.expirationTime = NoWork;
   this.key = null;
 
   this.effectTag = NoEffect;
@@ -37,6 +49,7 @@ function Fiber(tag, pendingProps) {
   this.nextEffect = null;
   this.stateNode = null;
 }
+
 
 function FiberRoot(container, tag) {
   this.container = container;
