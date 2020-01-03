@@ -920,6 +920,7 @@ function reconcileChildrenFibers(
       )
     );
   }
+
   if (Array.isArray(newChild)) {
     return reconcileArrayChildren(
       returnFiber,
@@ -2038,15 +2039,24 @@ function scheduleWorkToRoot(fiber, expirationTime) {
   ) {
     fiber.expirationTime = expirationTime;
   }
+  // 更新
+  let alternate = fiber.alternate;
 
+  // important: 更新 alternate 的 expirationTime
+  if (
+      alternate !== null &&
+      (alternate.expirationTime === NoWork ||
+          alternate.expirationTime > expirationTime)
+  ) {
+    alternate.expirationTime = expirationTime;
+  }
   let node = fiber.return;
 
   if (node === null && fiber.tag === HostRoot) {
     return fiber.stateNode;
   }
 
-  // 更新
-  let alternate = fiber.alternate;
+
   while (node !== null) {
     alternate = node.alternate;
     if (node.return === null && node.tag === HostRoot) {
